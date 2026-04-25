@@ -394,7 +394,7 @@ async function init(){
     const favs = await favResp.json();
     favs.forEach(f => favoritesSet.add(f.work_path));
 
-    allItems.forEach((c,i) => wpIdx[c.work_path]=i);
+    allItems.forEach((c,i) => { c._idx = i; wpIdx[c.work_path] = i; });
     const ws = new Set(allItems.map(c=>c.week));
     weekOrder = [...ws].sort((a,b)=>{
       const ma=a.match(/(\d+)年(\d+)月第(\d+)周/), mb=b.match(/(\d+)年(\d+)月第(\d+)周/);
@@ -452,7 +452,7 @@ function updateSourceFilter(){
 }
 
 function applyFilters(){
-  let items=allItems;
+  let items=allItems.slice();
   if(activeCats.size<5) items=items.filter(c=>activeCats.has(c.cat_num));
   // Week
   const wl=document.getElementById('weekDdList');
@@ -518,7 +518,7 @@ function renderTable(){
   rows.style.transform=`translateY(${start*ROW_H}px)`;
   let html='';
   for(let i=start;i<end;i++){
-    const c=filteredItems[i],id=wpIdx[c.work_path],sel=selectedIds.has(id),fav=favoritesSet.has(c.work_path),act=id===activeDetailIdx;
+    const c=filteredItems[i],id=c._idx,sel=selectedIds.has(id),fav=favoritesSet.has(c.work_path),act=id===activeDetailIdx;
     const ws=c.week.replace(/^\d+年/,''),ec=c.ext==='.pdf'?'ext-badge':'ext-badge non-pdf';
     html+=`<div class="table-row${sel?' selected':''}${act?' active-detail':''}" data-idx="${id}">
       <div class="cell"><input type="checkbox" ${sel?'checked':''} onclick="event.stopPropagation();toggleSel(${id})" /></div>
@@ -961,7 +961,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   // Select all
   document.getElementById('selectAll').addEventListener('change',e=>{
-    if(e.target.checked)filteredItems.forEach(c=>selectedIds.add(wpIdx[c.work_path]));else selectedIds.clear();
+    if(e.target.checked)filteredItems.forEach(c=>selectedIds.add(c._idx));else selectedIds.clear();
     updateSelection();renderTable();
   });
   document.getElementById('clearSelBtn').addEventListener('click',()=>{selectedIds.clear();updateSelection();renderTable();});

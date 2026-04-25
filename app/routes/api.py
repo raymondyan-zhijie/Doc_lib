@@ -235,8 +235,9 @@ async def upload_zip(
     except Exception as e:
         raise HTTPException(500, f"Extraction failed: {e}")
 
-    # Scan and index
+    # Scan and index, then rebuild FTS so rowids stay aligned with catalog
     new_count = _scan_work_week(week_label)
+    index_service.build_full_index()
     return {
         "status": "ok",
         "week_label": week_label,
@@ -282,7 +283,7 @@ def _scan_work_week(week_label: str) -> int:
     with open(CATALOG_PATH, "r", encoding="utf-8") as f:
         existing = json.load(f)
 
-    existing_keys = {item["work_path"] for item in existing}
+    existing_keys = {item["work_path"].replace("\\", "/") for item in existing}
     new_items = []
 
     for root, dirs, files in os.walk(week_dir):
