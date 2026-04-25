@@ -1,0 +1,28 @@
+# Data files (large, regenerated)
+catalog.json
+doclib.db
+
+# Archives & extracted data
+archives/
+work/
+extracted/
+
+# Temp & logs
+.tmp/
+*.log
+
+# Screenshots
+Screenshot*.png
+
+# Python
+__pycache__/
+*.pyc
+
+# Claude Code local settings
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
