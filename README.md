@@ -5,16 +5,26 @@
 ## 架构
 
 ```
-archives/          ← 原始 ZIP 归档（只读，不修改）
-work/               ← 全量解压后的工作目录（只读，外部工具可直接访问）
-app/                ← FastAPI 后端
-browser.html        ← 单页前端
-catalog.json        ← 文件目录（指向 work/ 下真实路径）
-doclib.db           ← SQLite（FTS5 全文索引 + 收藏 + 历史）
+archives/               ← 原始 ZIP 归档（只读，不修改）
+work/                   ← 全量解压后的工作目录（只读，外部工具可直接访问）
+app/                    ← FastAPI 后端
+  main.py               — 应用工厂 + lifespan 生命周期
+  config.py             — 常量、路径、7-Zip 检测、打开文件
+  models.py             — Pydantic 模型
+  routes/api.py         — API 路由
+  services/
+    zip_service.py      — 文件访问（安全边界：路径校验 + 提取 + 批量）
+    index_service.py    — FTS5 全文索引 + 收藏 + 历史 + 统计
+    catalog_service.py  — 目录扫描与维护
+browser.html            ← 单页前端（虚拟滚动 + 筛选 + 排序 + 收藏）
+catalog.json            ← 文件目录（work_path → 元数据）
+doclib.db               ← SQLite（FTS5 索引 + 收藏 + 历史，损坏可删除重建）
+requirements.txt        ← Python 依赖（锁定版本）
 ```
 
-- 文件打开直接 `os.startfile()`，无需等待解压
-- `work/` 目录可被 Windows 搜索、Everything、Acrobat 等外部工具直接使用
+- 文件访问通过 `work/` 路径直接 `os.startfile()`，无需等待解压
+- `work/` 可被 Windows 搜索、Everything、Acrobat 等外部工具直接使用
+- FTS5 以 `work_path` 为稳定键，不再依赖 rowid 位置偏移
 
 ## 数据概览
 
@@ -37,7 +47,7 @@ doclib.db           ← SQLite（FTS5 全文索引 + 收藏 + 历史）
 ### 前置要求
 
 - **Python 3.10+**
-- `pip install fastapi uvicorn pydantic python-multipart`
+- `pip install -r requirements.txt`
 - **7-Zip**：自动检测路径（环境变量 `SEVEN_ZIP_PATH` → `PATH` → 常见安装位置）
 - **tkinter**（桌面状态窗口，可选）：Windows/macOS 自带，Linux 需 `sudo apt install python3-tk`
 
@@ -47,28 +57,29 @@ doclib.db           ← SQLite（FTS5 全文索引 + 收藏 + 历史）
 |------|------|
 | 双击 `start_hidden.vbs` | Windows：浏览器自动打开 + 桌面状态窗口，无终端 |
 | 双击 `Doc_Lib.pyw` | 跨平台：浏览器 + 桌面状态窗口（需 tkinter） |
-| `python server.py` | 终端模式，`Ctrl+C` 停止 |
+| `python server.py` | 终端模式，结构化日志输出，`Ctrl+C` 停止 |
 
-**停止**：点击桌面状态窗口的「Stop Server」。
+**停止**：点击桌面状态窗口的「Stop Server」或 POST `/api/shutdown`。
 
 ## 功能
 
 ### 浏览与筛选
-- **虚拟滚动表格**：16,000+ 文件流畅滚动
-- **多维度筛选**：周次、分类（彩色标签）、来源机构、文件类型
-- **文件名搜索**：300ms 防抖实时过滤
-- **全文搜索**：SQLite FTS5，搜索文件名关键词
+- **虚拟滚动表格**：16,000+ 文件流畅滚动，DOM 节点复用
+- **多维度筛选**：周次（下拉多选）、分类（彩色标签）、来源机构、文件类型
+- **文件名搜索**：300ms 防抖实时前端过滤
+- **全文搜索**：SQLite FTS5，索引 filename / category / source / week / work_path
 - **列排序**：点击排序，Shift+点击多列联合排序
 - **收藏筛选**：一键切换仅看收藏
 
 ### 文件操作
 - **打开文件**：直接用系统默认程序打开（瞬间，无需解压）
-- **提取文件**：复制到临时目录
+- **提取文件**：复制到指定目录，自动避免同名覆盖（`_1`, `_2` 后缀）
 - **PDF 预览**：浏览器内直接查看
-- **批量提取**：勾选多个文件，选择目录一键复制
+- **批量提取**：勾选多个文件，选择目录一键复制，带进度跟踪
+- **打开目录**：在系统文件管理器中打开目录（限制在 BASE_DIR 内）
 
 ### 收藏与历史
-- 收藏/书签标记重要文档
+- 收藏/书签标记重要文档（`work_path` UNIQUE 约束防止重复）
 - 自动记录最近 500 条浏览历史
 
 ### 统计
@@ -79,7 +90,8 @@ doclib.db           ← SQLite（FTS5 全文索引 + 收藏 + 历史）
 - 右上角切换，偏好保存到 localStorage
 
 ### 添加新数据
-- 点击标题栏 **+** → 拖拽新 ZIP → 自动解压到 `work/` → 自动索引
+- 点击标题栏 **+** → 拖拽一个或多个 ZIP → 每个文件自动识别周次标签 → 一并上传 → 自动解压到 `work/` → 重建索引
+- 单个 ZIP 上限 8 GB，前端拖放时即校验文件大小，后端 Content-Length 预检 + 流式拦截
 
 ## 项目结构
 
@@ -90,9 +102,10 @@ Doc_Lib/
 ├── start_hidden.vbs                   # Windows 一键启动
 ├── start_hidden.bat                   # Windows 备用
 ├── start_hidden.sh                    # macOS/Linux 一键启动
-├── browser.html                       # 前端页面
-├── catalog.json                       # 文件目录
-├── doclib.db                          # SQLite 数据库
+├── browser.html                       # 前端页面（单文件 HTML+CSS+JS）
+├── catalog.json                       # 文件目录（work_path → 元数据）
+├── doclib.db                          # SQLite 数据库（FTS5 + 收藏 + 历史）
+├── requirements.txt                   # Python 依赖（锁定版本）
 ├── archives/                          # ZIP 归档（只读）
 │   ├── 2026年1月第1周.zip
 │   └── ...
@@ -102,14 +115,15 @@ Doc_Lib/
 │   │   └── ...
 │   └── ...
 ├── app/
-│   ├── main.py
-│   ├── config.py
-│   ├── models.py
+│   ├── main.py                        # FastAPI 应用 + lifespan
+│   ├── config.py                      # 常量配置
+│   ├── models.py                      # Pydantic 模型
 │   ├── routes/
-│   │   └── api.py
+│   │   └── api.py                     # API 路由
 │   └── services/
 │       ├── zip_service.py             # 文件服务（安全边界）
-│       └── index_service.py           # FTS5 搜索/收藏/历史
+│       ├── index_service.py           # FTS5 搜索/收藏/历史
+│       └── catalog_service.py         # 目录扫描维护
 └── .tmp/                              # 临时文件（启动时清理）
 ```
 
@@ -117,51 +131,42 @@ Doc_Lib/
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `GET /api/catalog` | GET | 目录数据 |
+| `GET /api/catalog` | GET | 目录数据（JSON，no-cache） |
 | `GET /api/open?work_path=` | GET | 用系统默认程序打开文件 |
-| `GET /api/extract?work_path=` | GET | 复制文件到 .tmp/ |
+| `GET /api/extract?work_path=&target_dir=` | GET | 复制文件到指定目录（target_dir 限制在 BASE_DIR 内） |
 | `GET /api/file?work_path=` | GET | 直接提供文件（浏览器预览） |
-| `POST /api/batch-extract` | POST | 批量复制文件到指定目录 |
-| `GET /api/batch-progress?task_id=` | GET | 批量进度 |
-| `GET /api/search?q=` | GET | 全文搜索（FTS5） |
-| `POST /api/rebuild-index` | POST | 重建搜索索引 |
+| `POST /api/batch-extract` | POST | 批量复制文件到指定目录，返回 task_id 轮询进度 |
+| `GET /api/batch-progress?task_id=` | GET | 批量进度查询 |
+| `GET /api/open-dir?path=` | GET | 在文件管理器中打开目录（限制在 BASE_DIR 内） |
+| `GET /api/config` | GET | 服务端配置（extract_dir, platform） |
+| `GET /api/search?q=&limit=` | GET | 全文搜索（FTS5 work_path 稳定键，O(1) 字典查找） |
+| `POST /api/rebuild-index` | POST | 重建 FTS5 索引（事务包裹，无空窗期） |
 | `GET /api/favorites` | GET | 收藏列表 |
 | `POST /api/favorites` | POST | 添加收藏 |
 | `DELETE /api/favorites?work_path=` | DELETE | 取消收藏 |
-| `GET /api/history` | GET | 浏览历史 |
+| `GET /api/favorites/check?work_path=` | GET | 检查是否已收藏 |
+| `GET /api/history?limit=` | GET | 浏览历史 |
 | `GET /api/stats/sources` | GET | 来源统计 |
 | `GET /api/stats/weekly` | GET | 周度统计 |
-| `POST /api/upload` | POST | 上传新 ZIP（存 archives/ + 解压到 work/ + 索引） |
+| `POST /api/upload` | POST | 上传一个或多个 ZIP（8 GB/文件上限，Content-Length 预检，逐文件独立处理，统一重建索引） |
 | `POST /api/shutdown` | POST | 关闭服务器 |
-
-## 添加新数据
-
-### 网页上传（推荐）
-
-点击 **+** → 拖拽 ZIP → 自动完成全部流程。
-
-### 手动放置
-
-```bash
-# 1. 将 ZIP 放入 archives/
-cp new.zip "D:\Doc_Lib\archives\2026年4月第5周.zip"
-
-# 2. 解压到 work/
-"C:\Program Files\7-Zip\7z.exe" x "D:\Doc_Lib\archives\...zip" -o"D:\Doc_Lib\work\..."
-
-# 3. 扫描入库（需服务运行中）
-curl -X POST http://localhost:8765/api/catalog/update
-```
 
 ## 安全
 
-- 所有文件访问经 `zip_service.py` 统一管理，`os.path.realpath()` 校验防路径遍历
-- 7-Zip 调用使用参数列表形式（无 `shell=True`）
-- `work/` 和 `archives/` 只读访问
-- 数据库损坏可删除，启动时自动重建
+- **路径遍历防护**：所有文件路径经 `os.path.realpath()` 规范化 + 前缀校验，统一由 `zip_service._validate_path()` 执行
+- **目标目录限制**：`/api/extract`、`/api/batch-extract`、`/api/open-dir` 的目标路径校验在 `BASE_DIR` 子树内
+- **命令注入防护**：7-Zip 使用参数列表形式（无 `shell=True`）；macOS/Linux 的 `open_file_external` 使用 `subprocess.run([...])` 而非 `os.system()`
+- **XSS 防护**：前端 `esc()` 对 `<` `>` `&` `"` 全部转义，可在 HTML 属性上下文中安全使用
+- **信息保护**：全局异常处理器返回通用错误消息，内部细节仅记录服务端日志
+- **上传限制**：单文件上限 8 GB，前端拖放时即时校验 + 后端 Content-Length 预检 + 流式拦截（三道防线）
+- **数据完整性**：`catalog.json` 原子写入（`.tmp` + `os.replace()`），防止崩溃损坏；FTS5 重建使用事务包裹，无空窗期
+- **并发安全**：catalog 内存缓存读写加锁；SQLite WAL 模式支持读写并发
+- **网络隔离**：服务器绑定 `127.0.0.1`，仅限本机访问
+- **数据库容灾**：`doclib.db` 损坏可删除，启动时自动重建；FTS5 旧版 schema 自动检测迁移
 
 ## 注意事项
 
-- 服务器监听 `127.0.0.1`，仅限本机访问
 - `work/` 约 50-60 GB，确保磁盘空间充足
 - 首次使用或删除 `doclib.db` 后，启动时自动重建 FTS5 索引（约 1-2 分钟）
+- 上传 ZIP 时，文件名需符合 `YYYY年M月第W周.zip` 格式以自动识别周次标签
+- Windows 上路径大小写不敏感，`resolve_work_path()` 内部统一处理分隔符

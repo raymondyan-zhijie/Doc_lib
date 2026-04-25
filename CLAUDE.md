@@ -12,33 +12,36 @@ A local document catalog browser for ~16,200 research reports. FastAPI backend +
 archives/          ← Original ZIPs (read-only, never modified)
 work/              ← Fully extracted working copy (read-only, accessible by external tools)
 app/
-  main.py          — FastAPI app, startup lifecycle, exception handler
-  config.py        — Constants (paths, CAT_MAP)
+  main.py          — FastAPI app, lifespan lifecycle, structured logging
+  config.py        — Constants (paths, CAT_MAP, MAX_UPLOAD_SIZE)
   models.py        — Pydantic models
   routes/
     api.py         — All API endpoints
   services/
     zip_service.py — File access: open, extract, serve, batch, upload (7-Zip only for archive extraction)
     index_service.py — SQLite FTS5 full-text search, favorites, history, statistics
+    catalog_service.py — Catalog scanning and maintenance (scan_work_week)
 server.py          — Entry point, terminal mode
 Doc_Lib.pyw        — Desktop launcher (tkinter status window + browser)
 browser.html       — Single-page frontend (all CSS/JS inline)
 catalog.json       — File catalog (work_path = relative path within work/)
 doclib.db          — SQLite (FTS5 index, favorites by work_path, history by work_path)
+requirements.txt   — Python dependencies (pinned versions)
 ```
 
 **Key decisions:**
 - **Archives vs Work separation**: ZIPs live in `archives/` (read-only archive). All files are pre-extracted to `work/`. File access is instant — no 7-Zip extraction on open. `work/` can be browsed by external tools.
-- **work_path as primary key**: Catalog, favorites, and history all use `work_path` (relative path within `work/`) as the unique file identifier.
-- **zip_service.py is the security boundary**: All file paths validated against `WORK_DIR` via `os.path.realpath()`. No `shell=True` in subprocess calls.
-- **FTS5 is content-less** (`content=''`): Index stores only tokens; search maps rowids back to catalog.json entries.
-- **Catalog is cached in memory**: `catalog.json` loaded once and cached by mtime.
-- **doclib.db is disposable**: If corrupted, delete it and the server rebuilds on startup.
+- **work_path as primary key**: Catalog, favorites, and history all use `work_path` (relative path within `work/`) as the unique file identifier. FTS5 index stores `work_path` as a column for stable O(1) dict lookup — no fragile rowid→position mapping.
+- **zip_service.py is the security boundary**: All file paths validated against `WORK_DIR` or `BASE_DIR` via `_validate_path()` (`os.path.realpath()` + prefix check). No `shell=True` in subprocess calls; macOS/Linux uses `subprocess.run()`. Target directories (`/api/extract`, `/api/batch-extract`) also validated.
+- **Catalog is cached in memory**: `catalog.json` loaded once and cached by mtime, with a `_catalog_by_wp` dict for O(1) work_path lookup. Cache access is lock-protected for thread safety.
+- **doclib.db is disposable**: If corrupted, delete it and the server rebuilds on startup. Old FTS schemas auto-migrated.
+- **Atomic catalog writes**: `scan_work_week()` writes to `.tmp` then `os.replace()` to prevent corruption on crash.
+- **FTS rebuild uses transaction**: DELETE + INSERT wrapped in a single transaction so concurrent searches never see an empty index.
 
 ## Running
 
 ```bash
-pip install fastapi uvicorn pydantic python-multipart
+pip install -r requirements.txt
 python server.py                        # terminal mode, Ctrl+C to stop
 ```
 
@@ -50,19 +53,24 @@ API docs at `http://localhost:8765/docs`. Requires 7-Zip (auto-detected).
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `GET /api/catalog` | GET | File catalog data |
+| `GET /api/catalog` | GET | File catalog data (JSON, no-cache) |
 | `GET /api/open?work_path=` | GET | Open file with system default app |
-| `GET /api/extract?work_path=` | GET | Copy file to .tmp/ |
+| `GET /api/extract?work_path=&target_dir=` | GET | Copy file to target directory (validated within BASE_DIR; auto-rename to avoid overwrite) |
 | `GET /api/file?work_path=` | GET | Serve file directly (browser preview) |
-| `POST /api/batch-extract` | POST | Batch copy to target directory |
+| `POST /api/batch-extract` | POST | Batch copy to target directory (target_dir validated) |
 | `GET /api/batch-progress?task_id=` | GET | Batch progress |
-| `GET /api/search?q=` | GET | Full-text search (FTS5) |
-| `POST /api/rebuild-index` | POST | Rebuild FTS5 index from catalog |
-| `GET/POST/DELETE /api/favorites` | Various | Favorites (keyed by work_path) |
-| `GET /api/history` | GET | Browsing history |
+| `GET /api/open-dir?path=` | GET | Open directory in file explorer (validated within BASE_DIR) |
+| `GET /api/config` | GET | Server config (extract_dir, platform) |
+| `GET /api/search?q=&limit=` | GET | Full-text search (FTS5, work_path stable key) |
+| `POST /api/rebuild-index` | POST | Rebuild FTS5 index from catalog (transaction-wrapped) |
+| `GET /api/favorites` | GET | Get all favorites |
+| `POST /api/favorites` | POST | Add favorite (work_path UNIQUE) |
+| `DELETE /api/favorites?work_path=` | DELETE | Remove favorite |
+| `GET /api/favorites/check?work_path=` | GET | Check if favorited |
+| `GET /api/history?limit=` | GET | Browsing history (max 500 retained) |
 | `GET /api/stats/sources` | GET | Source count statistics |
 | `GET /api/stats/weekly` | GET | Weekly count statistics |
-| `POST /api/upload` | POST | Upload new ZIP (save to archives → extract to work → index) |
+| `POST /api/upload` | POST | Upload one or more ZIPs (8 GB/file limit; Content-Length pre-check; per-file processing; single FTS rebuild) |
 | `POST /api/shutdown` | POST | Graceful server shutdown |
 
 ## Data Layout
@@ -76,5 +84,5 @@ Each ZIP has 5 fixed subdirectories, preserved in `work/{week}/`:
 
 ## Adding New Data
 
-1. **Web UI** (recommended): Click **+** button → drag/drop ZIP → auto-extract + index.
-2. **Manual**: Place ZIP in `archives/`, extract to `work/{week}/`, then `POST /api/catalog/update`.
+1. **Web UI** (recommended): Click **+** button → drag/drop one or more ZIPs → auto-detect week from filename → batch upload → auto-extract + index.
+2. **Manual**: Place ZIP in `archives/`, extract to `work/{week}/`, restart server to rebuild index.
