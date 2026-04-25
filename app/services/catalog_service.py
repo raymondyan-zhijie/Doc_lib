@@ -76,8 +76,10 @@ def scan_work_week(week_label: str) -> int:
 
     if new_items:
         existing.extend(new_items)
-        with open(CATALOG_PATH, "w", encoding="utf-8") as f:
+        tmp_path = CATALOG_PATH + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(existing, f, ensure_ascii=False, indent=1)
+        os.replace(tmp_path, CATALOG_PATH)
         index_service.invalidate_cache()
 
     return len(new_items)

@@ -69,6 +69,11 @@ async def open_file(work_path: str = Query(...)):
 async def extract_file(work_path: str = Query(...), target_dir: str = Query("")):
     try:
         td = target_dir.strip() if target_dir else ""
+        if td:
+            try:
+                zip_service._validate_path(os.path.abspath(td), BASE_DIR)
+            except PermissionError:
+                raise HTTPException(403, "Access denied: target directory outside allowed path")
         return zip_service.extract_file(work_path, td if td else None)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
@@ -118,6 +123,10 @@ async def batch_extract(req: BatchExtractRequest):
         raise HTTPException(400, "No items specified")
     if not req.target_dir:
         raise HTTPException(400, "No target directory specified")
+    try:
+        zip_service._validate_path(os.path.abspath(req.target_dir), BASE_DIR)
+    except PermissionError:
+        raise HTTPException(403, "Access denied: target directory outside allowed path")
     try:
         os.makedirs(req.target_dir, exist_ok=True)
     except OSError:

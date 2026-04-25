@@ -969,7 +969,7 @@ function clearExtFilter(){activeExt='';document.getElementById('extSel').value='
 
 // ======== UTILS ========
 function fmtSize(b){if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB';}
-function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML.replace(/"/g,'&quot;');}
 function showToast(msg,err){
   const c=document.getElementById('toastContainer'),el=document.createElement('div');
   el.className='toast'+(err?' error':'');el.textContent=msg;c.appendChild(el);

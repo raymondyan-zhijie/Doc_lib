@@ -103,18 +103,17 @@ def build_full_index():
     """Build FTS5 index from catalog.json. Replaces existing index."""
     conn = _get_conn()
     try:
-        try:
-            conn.execute("DELETE FROM fts_index")
-        except Exception:
-            pass
-        conn.commit()
-
         catalog = _get_catalog()
         if not catalog:
             return 0
 
         conn.execute("BEGIN")
         try:
+            try:
+                conn.execute("DELETE FROM fts_index")
+            except Exception:
+                pass
+
             for item in catalog:
                 conn.execute(
                     "INSERT INTO fts_index(work_path, filename, category, source, week) VALUES (?, ?, ?, ?, ?)",
