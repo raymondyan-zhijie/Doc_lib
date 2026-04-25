@@ -10,10 +10,11 @@ import shutil
 import subprocess
 import threading
 
-from app.config import BASE_DIR, WORK_DIR, TMP_DIR, ARCHIVES_DIR, SEVEN_ZIP, open_file_external
+from app.config import BASE_DIR, WORK_DIR, TMP_DIR, ARCHIVES_DIR, get_7z, open_file_external
 
 _batch_tasks: dict = {}
 _batch_lock = threading.Lock()
+_MAX_BATCH_TASKS = 100
 
 
 def ensure_tmp():
@@ -114,7 +115,14 @@ def _run_batch(items: list[dict], target_dir: str, task_id: str):
             wp = item.get("work_path", "")
             src = resolve_work_path(wp)
             if os.path.isfile(src):
-                dst = os.path.join(target_dir, os.path.basename(src))
+                base = os.path.basename(src)
+                name, ext = os.path.splitext(base)
+                dst = os.path.join(target_dir, base)
+                # Avoid overwriting: append _1, _2, etc.
+                counter = 1
+                while os.path.exists(dst):
+                    dst = os.path.join(target_dir, f"{name}_{counter}{ext}")
+                    counter += 1
                 shutil.copy2(src, dst)
             else:
                 errors.append(f"{wp}: File not found")
@@ -126,6 +134,13 @@ def _run_batch(items: list[dict], target_dir: str, task_id: str):
     with _batch_lock:
         _batch_tasks[task_id]["status"] = "done"
         _batch_tasks[task_id]["errors"] = errors
+        # Cleanup: remove oldest completed tasks beyond limit
+        if len(_batch_tasks) > _MAX_BATCH_TASKS:
+            done_keys = [k for k, v in _batch_tasks.items() if v["status"] == "done"]
+            excess = len(done_keys) - _MAX_BATCH_TASKS // 2
+            if excess > 0:
+                for k in done_keys[:excess]:
+                    del _batch_tasks[k]
 
 
 # ============ Upload / Extract new archive ============
@@ -140,7 +155,7 @@ def extract_archive_to_work(zip_filename: str, week_label: str) -> int:
 
     os.makedirs(target, exist_ok=True)
     result = subprocess.run(
-        [SEVEN_ZIP, "x", zip_path, f"-o{target}", "-aoa", "-y"],
+        [get_7z(), "x", zip_path, f"-o{target}", "-aoa", "-y"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
         timeout=600,
     )

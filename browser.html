@@ -93,6 +93,7 @@ a:hover { text-decoration:underline; }
 .table-row { display:grid; grid-template-columns:36px 110px 80px 90px 1fr 42px 56px 80px 36px 70px; align-items:center; height:32px; border-bottom:1px solid var(--border); cursor:pointer; transition:background .1s; font-size:12px; }
 .table-row:hover { background:var(--row-hover); }
 .table-row.selected { background:var(--row-selected); }
+.table-row.active-detail { background:var(--row-selected); border-left:3px solid var(--accent); padding-left:3px; }
 .table-row .cell { padding:0 3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .table-row .cell.week { font-size:11px; color:var(--text2); }
 .table-row .cell.source { font-size:11px; color:var(--text2); }
@@ -311,10 +312,9 @@ input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:v
     <div class="field">
       <label>预设目录</label>
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">
-        <button class="btn-sm btn-secondary" onclick="setBatchDir('D:\\Doc_Lib\\extracted')">Doc_Lib</button>
-        <button class="btn-sm btn-secondary" onclick="setBatchDir(getExtractDir()+'\\券商')">券商</button>
-        <button class="btn-sm btn-secondary" onclick="setBatchDir(getExtractDir()+'\\投行')">投行</button>
         <button class="btn-sm btn-secondary" onclick="setBatchDir(getExtractDir())">提取目录</button>
+        <button class="btn-sm btn-secondary" onclick="setBatchDir(getExtractDir()+'/券商')">券商</button>
+        <button class="btn-sm btn-secondary" onclick="setBatchDir(getExtractDir()+'/投行')">投行</button>
       </div>
     </div>
     <div id="batchProgress" style="display:none">
@@ -376,6 +376,7 @@ let allItems=[], filteredItems=[], weekOrder=[], wpIdx={};
 let selectedIds=new Set(), sortCols=[{col:'date',dir:'desc'}], searchQuery='';
 let activeCats=new Set(['01','02','03','04','05']), activeSource='', activeExt='', showFavOnly=false;
 let favoritesSet=new Set(); // work_path keys
+let activeDetailIdx=-1; // index in allItems of row shown in detail panel
 
 const ROW_H=32, BUFFER=12;
 const CAT_NAMES={'01':'重点报告','02':'国内券商','03':'投行报告','04':'小报告','05':'杂货'};
@@ -384,6 +385,7 @@ const CAT_COLORS={'01':'var(--cat01)','02':'var(--cat02)','03':'var(--cat03)','0
 // ======== INIT ========
 async function init(){
   try{
+    initExtractDir();
     const [catalogResp, favResp] = await Promise.all([
       fetch('/api/catalog'),
       fetch('/api/favorites'),
@@ -516,9 +518,9 @@ function renderTable(){
   rows.style.transform=`translateY(${start*ROW_H}px)`;
   let html='';
   for(let i=start;i<end;i++){
-    const c=filteredItems[i],id=wpIdx[c.work_path],sel=selectedIds.has(id),fav=favoritesSet.has(c.work_path);
+    const c=filteredItems[i],id=wpIdx[c.work_path],sel=selectedIds.has(id),fav=favoritesSet.has(c.work_path),act=id===activeDetailIdx;
     const ws=c.week.replace(/^\d+年/,''),ec=c.ext==='.pdf'?'ext-badge':'ext-badge non-pdf';
-    html+=`<div class="table-row${sel?' selected':''}" data-idx="${id}">
+    html+=`<div class="table-row${sel?' selected':''}${act?' active-detail':''}" data-idx="${id}">
       <div class="cell"><input type="checkbox" ${sel?'checked':''} onclick="event.stopPropagation();toggleSel(${id})" /></div>
       <div class="cell week">${esc(ws)}</div>
       <div class="cell cat"><span class="cat-tag" data-cat="${c.cat_num}">${CAT_NAMES[c.cat_num]}</span></div>
@@ -566,7 +568,8 @@ function resolveItem(el){
   if(byIdx&&byWp&&byIdx!==byWp){
     console.error('RESOLVE MISMATCH','idxNum='+idxNum,'wpStr='+wpStr,
       'byIdx='+byIdx.filename,'byWp='+(byWp?byWp.filename:'null'));
-    showToast('BUG! resolve mismatch: '+byIdx.filename+' vs '+(byWp?byWp.filename:'null'),true);
+    showToast('严重错误! 索引不一致，操作已阻止: '+byIdx.filename+' vs '+(byWp?byWp.filename:'null'),true);
+    return null; // Block operation to prevent extracting wrong file
   }
   if(!byIdx&&!byWp){
     showToast('错误: 索引无效 idx='+idxNum+' wp='+wpStr,true);
@@ -612,6 +615,15 @@ function updateSelection(){
 }
 
 function showDetail(idx){
+  // Remove previous active-detail highlight
+  if(activeDetailIdx>=0){
+    const prev=document.querySelector(`.table-row[data-idx="${activeDetailIdx}"]`);
+    if(prev) prev.classList.remove('active-detail');
+  }
+  activeDetailIdx=idx;
+  // Add active-detail highlight to new row
+  const row=document.querySelector(`.table-row[data-idx="${idx}"]`);
+  if(row) row.classList.add('active-detail');
   const c=allItems[idx],fav=favoritesSet.has(c.work_path);
   document.getElementById('detailTitle').textContent=c.filename;
   let h='';
@@ -628,19 +640,38 @@ function showDetail(idx){
   document.getElementById('detailPanel').classList.add('visible');
   document.getElementById('detailOverlay').classList.add('visible');
 }
-function closeDetail(){document.getElementById('detailPanel').classList.remove('visible');document.getElementById('detailOverlay').classList.remove('visible');}
+function closeDetail(){
+  if(activeDetailIdx>=0){
+    const row=document.querySelector(`.table-row[data-idx="${activeDetailIdx}"]`);
+    if(row) row.classList.remove('active-detail');
+    activeDetailIdx=-1;
+  }
+  document.getElementById('detailPanel').classList.remove('visible');
+  document.getElementById('detailOverlay').classList.remove('visible');
+}
 
 async function previewPDF(el){
   const c=resolveItem(el); if(!c)return;
   if(c.ext!=='.pdf'){showToast('仅支持PDF预览',true);return;}
-  try{const r=await fetch('/api/file?work_path='+encodeURIComponent(c.work_path));window.open(r.url,'_blank');}catch(e){showToast(e.message,true);}
+  window.open('/api/file?work_path='+encodeURIComponent(c.work_path),'_blank');
 }
 
 // ======== EXTRACT DIR ========
 const EXTRACT_DIR_KEY='doclib_extract_dir';
+let _defaultExtractDir='';
+async function initExtractDir(){
+  try{
+    const r=await fetch('/api/config');
+    const cfg=await r.json();
+    _defaultExtractDir=cfg.default_extract_dir||'';
+  }catch(e){_defaultExtractDir='';}
+}
 function getExtractDir(){
   let v=localStorage.getItem(EXTRACT_DIR_KEY);
-  if(!v||!v.trim()){v='D:\\Doc_Lib\\extracted';localStorage.setItem(EXTRACT_DIR_KEY,v);}
+  if(!v||!v.trim()){
+    v=_defaultExtractDir||'extracted';
+    if(v) localStorage.setItem(EXTRACT_DIR_KEY,v);
+  }
   return v;
 }
 function saveExtractDir(v){localStorage.setItem(EXTRACT_DIR_KEY,v.trim());}

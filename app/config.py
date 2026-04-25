@@ -59,4 +59,11 @@ def find_7z():
     raise FileNotFoundError("7-Zip not found. Install 7-Zip or set SEVEN_ZIP_PATH env var.")
 
 
-SEVEN_ZIP = find_7z()
+_SEVEN_ZIP = None
+
+def get_7z():
+    """Lazy-load 7-Zip path. Only raises if actually needed (extract/upload)."""
+    global _SEVEN_ZIP
+    if _SEVEN_ZIP is None:
+        _SEVEN_ZIP = find_7z()
+    return _SEVEN_ZIP

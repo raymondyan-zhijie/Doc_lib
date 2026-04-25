@@ -2,6 +2,7 @@
 API routes for the Doc_Lib Catalog Browser.
 """
 
+import datetime
 import json
 import os
 import re
@@ -9,7 +10,7 @@ import re
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse
 
-from app.config import BASE_DIR, ARCHIVES_DIR, WORK_DIR, CATALOG_PATH, CAT_MAP, HTML_PATH
+from app.config import BASE_DIR, ARCHIVES_DIR, WORK_DIR, CATALOG_PATH, CAT_MAP, HTML_PATH, open_file_external
 from app.models import (
     BatchExtractRequest,
     FavoriteItem,
@@ -68,13 +69,23 @@ async def extract_file(work_path: str = Query(...), target_dir: str = Query(""))
         raise HTTPException(404, str(e))
 
 
+@router.get("/config")
+async def get_config():
+    """Return server-side config (paths, platform info)."""
+    import platform
+    return {
+        "base_dir": BASE_DIR,
+        "default_extract_dir": os.path.join(BASE_DIR, "extracted"),
+        "platform": platform.system(),
+    }
+
+
 @router.get("/open-dir")
 async def open_dir(path: str = Query(...)):
     """Open a directory in the system file explorer. Creates it if needed."""
-    import os
     os.makedirs(path, exist_ok=True)
     try:
-        os.startfile(os.path.normpath(path))
+        open_file_external(os.path.normpath(path))
         return {"status": "opened", "path": path}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -305,7 +316,6 @@ def _scan_work_week(week_label: str) -> int:
             file_path = os.path.join(root, fname)
             size = os.path.getsize(file_path)
             mtime = os.path.getmtime(file_path)
-            import datetime
             dt = datetime.datetime.fromtimestamp(mtime)
             date_str = f"{dt.year}-{dt.month:02d}-{dt.day:02d}"
 
