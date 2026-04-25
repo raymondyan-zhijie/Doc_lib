@@ -10,8 +10,9 @@ import re
 import shutil
 import threading
 import time
+from typing import List
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from app.config import BASE_DIR, ARCHIVES_DIR, CATALOG_PATH, HTML_PATH, MAX_UPLOAD_SIZE, open_file_external
@@ -198,29 +199,58 @@ async def weekly_stats():
 
 @router.post("/upload")
 async def upload_zip(
-    file: UploadFile = File(...),
-    week_label: str = Query("", description="e.g. 2026年4月第4周"),
+    request: Request,
+    files: List[UploadFile] = File(...),
 ):
-    """Upload a new weekly ZIP archive: save to archives/, extract to work/, update catalog."""
+    """Upload one or more weekly ZIP archives: save to archives/, extract to work/, update catalog."""
+    if not files:
+        raise HTTPException(400, "No files provided")
 
+    # Pre-check: reject early if Content-Length exceeds reasonable upper bound
+    content_length = request.headers.get("Content-Length")
+    if content_length:
+        try:
+            cl = int(content_length)
+            if cl > MAX_UPLOAD_SIZE * max(len(files), 1):
+                raise HTTPException(413, f"Request too large. Max total size: {MAX_UPLOAD_SIZE // (1024**3)} GB × {max(len(files), 1)} file(s)")
+        except ValueError:
+            pass
+
+    os.makedirs(ARCHIVES_DIR, exist_ok=True)
+
+    results = []
+    for file in files:
+        result = await _upload_one_zip(file)
+        results.append(result)
+
+    # Rebuild FTS index once after all files are processed
+    index_service.build_full_index()
+
+    all_ok = all(r["status"] == "ok" for r in results)
+    return {
+        "status": "ok" if all_ok else "partial",
+        "results": results,
+    }
+
+
+async def _upload_one_zip(file: UploadFile) -> dict:
+    """Upload and process a single ZIP file. Returns per-file result dict."""
     if not file.filename or not file.filename.lower().endswith(".zip"):
-        raise HTTPException(400, "Only .zip files are accepted")
+        return {"filename": file.filename or "(unknown)", "status": "error", "error": "Only .zip files are accepted"}
 
-    # Determine week label
+    # Determine week label from filename
+    week_label = ""
+    m = re.match(r"(\d{4}年\d{1,2}月第\d{1,2}周)", file.filename)
+    if m:
+        week_label = m.group(1)
     if not week_label:
-        m = re.match(r"(\d{4}年\d{1,2}月第\d{1,2}周)", file.filename)
-        if m:
-            week_label = m.group(1)
-    if not week_label:
-        raise HTTPException(400, "Could not determine week label. Provide one (e.g. 2026年4月第4周).")
+        return {"filename": file.filename, "status": "error", "error": "Could not determine week label from filename. Rename file like: 2026年4月第4周.zip"}
 
     zip_filename = f"{week_label}.zip"
     zip_path = os.path.join(ARCHIVES_DIR, zip_filename)
 
     if os.path.exists(zip_path):
-        raise HTTPException(409, f"Archive already exists: {zip_filename}")
-
-    os.makedirs(ARCHIVES_DIR, exist_ok=True)
+        return {"filename": file.filename, "status": "error", "error": f"Archive already exists: {zip_filename}"}
 
     # Save ZIP to archives/
     try:
@@ -234,25 +264,26 @@ async def upload_zip(
                 if total_size > MAX_UPLOAD_SIZE:
                     f.close()
                     os.remove(zip_path)
-                    raise HTTPException(413, f"File too large. Max size: {MAX_UPLOAD_SIZE // (1024**3)} GB")
+                    return {"filename": file.filename, "status": "error", "error": f"File too large ({total_size // (1024**2)} MB). Max size: {MAX_UPLOAD_SIZE // (1024**3)} GB"}
                 f.write(chunk)
     except HTTPException:
         raise
     except Exception:
         if os.path.exists(zip_path):
             os.remove(zip_path)
-        raise HTTPException(500, "Failed to save uploaded file")
+        return {"filename": file.filename, "status": "error", "error": "Failed to save uploaded file"}
 
     # Extract to work/
     try:
         file_count = zip_service.extract_archive_to_work(zip_filename, week_label)
     except Exception as e:
-        raise HTTPException(500, f"Extraction failed: {e}")
+        return {"filename": file.filename, "status": "error", "error": f"Extraction failed: {e}"}
 
-    # Scan and index, then rebuild FTS so rowids stay aligned with catalog
+    # Scan new entries (FTS rebuild happens once after all files)
     new_count = catalog_service.scan_work_week(week_label)
-    index_service.build_full_index()
+
     return {
+        "filename": file.filename,
         "status": "ok",
         "week_label": week_label,
         "zip_filename": zip_filename,

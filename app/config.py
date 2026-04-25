@@ -12,7 +12,7 @@ CATALOG_PATH = os.path.join(BASE_DIR, "catalog.json")
 HTML_PATH = os.path.join(BASE_DIR, "browser.html")
 DB_PATH = os.path.join(BASE_DIR, "doclib.db")
 DEFAULT_PORT = 8765
-MAX_UPLOAD_SIZE = 4 * 1024 * 1024 * 1024  # 4 GB
+MAX_UPLOAD_SIZE = 8 * 1024 * 1024 * 1024  # 8 GB
 
 CAT_MAP = {
     "01": "重点报告",

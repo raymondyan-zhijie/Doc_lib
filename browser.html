@@ -341,17 +341,13 @@ input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:v
            ondrop="handleFileDrop(event)"
            onclick="document.getElementById('uploadFileInput').click()">
         <div style="font-size:28px;margin-bottom:6px">&#128230;</div>
-        <div style="font-size:13px;color:var(--text)" id="uploadFileName">拖拽 ZIP 文件到此处或点击选择</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:4px">仅支持 .zip 文件，大小约 3–5 GB</div>
-        <input type="file" id="uploadFileInput" accept=".zip" style="display:none" onchange="handleFileSelect(event)" />
+        <div style="font-size:13px;color:var(--text)" id="uploadFileName">拖拽一个或多个 ZIP 文件到此处或点击选择</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px">仅支持 .zip 文件，单个上限 8 GB，可多选</div>
+        <input type="file" id="uploadFileInput" accept=".zip" multiple style="display:none" onchange="handleFileSelect(event)" />
       </div>
     </div>
-    <div class="field">
-      <label>周次标签</label>
-      <input type="text" id="uploadWeekLabel" placeholder="例如：2026年4月第4周" />
-      <div style="font-size:10px;color:var(--text2);margin-top:2px">留空则自动从文件名提取。格式：YYYY年M月第W周</div>
-    </div>
-    <div id="uploadProgress" style="display:none">
+    <div id="uploadFileList" style="margin-top:8px;max-height:160px;overflow-y:auto;display:none"></div>
+    <div id="uploadProgress" style="display:none;margin-top:8px">
       <div class="progress-bar"><div class="fill" id="uploadProgressFill"></div></div>
       <div class="progress-text" id="uploadProgressText"></div>
     </div>
@@ -743,13 +739,13 @@ function toggleFavFilter(){
 }
 
 // ======== UPLOAD ========
-let uploadFile=null;
+const MAX_UPLOAD_PER_FILE = 8 * 1024 * 1024 * 1024; // 8 GB
+let uploadFiles=[];
 
 function showUploadDialog(){
-  uploadFile=null;
-  document.getElementById('uploadFileName').innerHTML='拖拽 ZIP 文件到此处或点击选择';
-  document.getElementById('uploadWeekLabel').value='';
-  document.getElementById('uploadStartBtn').disabled=true;
+  uploadFiles=[];
+  refreshUploadQueue();
+  document.getElementById('uploadFileInput').value='';
   document.getElementById('uploadProgress').style.display='none';
   document.getElementById('uploadDialog').classList.add('visible');
 }
@@ -759,38 +755,81 @@ function closeUploadDialog(){
 }
 
 function handleFileSelect(e){
-  if(e.target.files.length>0) setUploadFile(e.target.files[0]);
+  if(e.target.files.length>0) addUploadFiles(e.target.files);
 }
 
 function handleFileDrop(e){
   e.preventDefault();
   document.getElementById('uploadDropZone').style.borderColor='var(--border)';
-  if(e.dataTransfer.files.length>0) setUploadFile(e.dataTransfer.files[0]);
+  if(e.dataTransfer.files.length>0) addUploadFiles(e.dataTransfer.files);
 }
 
-function setUploadFile(file){
-  if(!file.name.toLowerCase().endsWith('.zip')){
-    showToast('仅支持 .zip 文件', true);
-    return;
+function addUploadFiles(fileList){
+  var added=0, skippedNonZip=0, skippedSize=0, skippedDup=0;
+  for(var i=0;i<fileList.length;i++){
+    var file=fileList[i];
+    if(!file.name.toLowerCase().endsWith('.zip')){ skippedNonZip++; continue; }
+    if(file.size>MAX_UPLOAD_PER_FILE){ skippedSize++; continue; }
+    // Check for duplicate filenames in queue
+    if(uploadFiles.some(function(f){return f.name===file.name;})){ skippedDup++; continue; }
+    uploadFiles.push(file);
+    added++;
   }
-  uploadFile=file;
-  document.getElementById('uploadFileName').innerHTML='<b>'+esc(file.name)+'</b><br><span style="font-size:11px;color:var(--text2)">'+fmtSize(file.size)+'</span>';
-  document.getElementById('uploadStartBtn').disabled=false;
-  // Auto-fill week label from filename
-  var m=file.name.match(/(\d{4}年\d{1,2}月第\d{1,2}周)/);
-  if(m) document.getElementById('uploadWeekLabel').value=m[1];
+  var msgs=[];
+  if(added>0) msgs.push('已添加 '+added+' 个文件');
+  if(skippedNonZip>0) msgs.push(skippedNonZip+' 个非 ZIP 文件已跳过');
+  if(skippedSize>0) msgs.push(skippedSize+' 个超过 8 GB 已跳过');
+  if(skippedDup>0) msgs.push(skippedDup+' 个重复文件已跳过');
+  if(msgs.length>0) showToast(msgs.join('，'));
+  refreshUploadQueue();
+}
+
+function removeUploadFile(index){
+  uploadFiles.splice(index,1);
+  refreshUploadQueue();
+}
+
+function refreshUploadQueue(){
+  var listEl=document.getElementById('uploadFileList');
+  var btn=document.getElementById('uploadStartBtn');
+  var dropText=document.getElementById('uploadFileName');
+  if(uploadFiles.length===0){
+    listEl.style.display='none';
+    listEl.innerHTML='';
+    btn.disabled=true;
+    dropText.innerHTML='拖拽一个或多个 ZIP 文件到此处或点击选择';
+  } else {
+    var totalSize=0;
+    var html='';
+    for(var i=0;i<uploadFiles.length;i++){
+      totalSize+=uploadFiles[i].size;
+      html+='<div style="font-size:11px;padding:4px 8px;margin:2px 0;background:var(--bg2);border-radius:4px;display:flex;justify-content:space-between;align-items:center">'+
+        '<span><b>'+esc(uploadFiles[i].name)+'</b> <span style="color:var(--text2)">'+fmtSize(uploadFiles[i].size)+'</span></span>'+
+        '<a style="color:var(--accent);cursor:pointer;font-weight:bold;font-size:14px" onclick="removeUploadFile('+i+')">&times;</a>'+
+        '</div>';
+    }
+    listEl.innerHTML=html;
+    listEl.style.display='block';
+    btn.disabled=false;
+    dropText.innerHTML='<b>'+uploadFiles.length+'</b> 个文件 &middot; 共 '+fmtSize(totalSize);
+  }
 }
 
 async function startUpload(){
-  if(!uploadFile) return;
+  if(uploadFiles.length===0) return;
   var btn=document.getElementById('uploadStartBtn');
   btn.disabled=true;
-  document.getElementById('uploadProgress').style.display='block';
+  var progressEl=document.getElementById('uploadProgress');
+  var fillEl=document.getElementById('uploadProgressFill');
+  var textEl=document.getElementById('uploadProgressText');
+  progressEl.style.display='block';
+  fillEl.style.width='0%';
+  textEl.textContent='准备上传 '+uploadFiles.length+' 个文件...';
 
   var formData=new FormData();
-  formData.append('file', uploadFile);
-  var wl=document.getElementById('uploadWeekLabel').value.trim();
-  if(wl) formData.append('week_label', wl);
+  for(var i=0;i<uploadFiles.length;i++){
+    formData.append('files', uploadFiles[i]);
+  }
 
   var xhr=new XMLHttpRequest();
   xhr.open('POST', '/api/upload');
@@ -798,31 +837,47 @@ async function startUpload(){
   xhr.upload.onprogress=function(e){
     if(e.lengthComputable){
       var pct=Math.round(e.loaded/e.total*100);
-      document.getElementById('uploadProgressFill').style.width=pct+'%';
-      document.getElementById('uploadProgressText').textContent='上传中 '+fmtSize(e.loaded)+' / '+fmtSize(e.total)+' ('+pct+'%)';
+      fillEl.style.width=pct+'%';
+      textEl.textContent='上传中 '+fmtSize(e.loaded)+' / '+fmtSize(e.total)+' ('+pct+'%)';
     }
   };
 
   xhr.onload=function(){
-    if(xhr.status===200){
+    try{
       var d=JSON.parse(xhr.responseText);
-      document.getElementById('uploadProgressFill').style.width='100%';
-      document.getElementById('uploadProgressText').textContent='已添加 '+d.new_entries+' 个文件到 '+d.week_label;
-      showToast('添加成功: '+d.new_entries+' 个文件');
-      // Reload catalog after a short delay
-      setTimeout(function(){ init(); closeUploadDialog(); }, 1200);
-    } else {
-      var msg='上传失败';
-      try{ var e=JSON.parse(xhr.responseText); msg=e.detail||e.error||msg; }catch(ex){}
-      showToast(msg, true);
-      document.getElementById('uploadProgress').style.display='none';
+      var okCount=0, errCount=0, totalNew=0;
+      if(d.results){
+        d.results.forEach(function(r){
+          if(r.status==='ok'){ okCount++; totalNew+=r.new_entries||0; }
+          else errCount++;
+        });
+      }
+      fillEl.style.width='100%';
+      var msg;
+      if(errCount===0){
+        msg='全部成功: 共添加 '+totalNew+' 个条目 ('+okCount+' 个归档文件)';
+      } else if(okCount>0){
+        msg='部分成功: '+okCount+' 个完成, '+errCount+' 个失败';
+        d.results.forEach(function(r){
+          if(r.status==='error') showToast(r.error||'上传失败', true);
+        });
+      } else {
+        msg='全部失败';
+        if(d.results && d.results[0]) showToast(d.results[0].error||'上传失败', true);
+      }
+      textEl.textContent=msg;
+      showToast(msg, errCount>0);
+      setTimeout(function(){ init(); closeUploadDialog(); }, 2000);
+    } catch(ex){
+      showToast('解析响应失败', true);
+      progressEl.style.display='none';
       btn.disabled=false;
     }
   };
 
   xhr.onerror=function(){
     showToast('上传失败: 网络错误', true);
-    document.getElementById('uploadProgress').style.display='none';
+    progressEl.style.display='none';
     btn.disabled=false;
   };
 
