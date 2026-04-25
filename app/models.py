@@ -29,7 +29,3 @@ class FavoriteItem(BaseModel):
     filename: str
     work_path: str
 
-
-class SearchRequest(BaseModel):
-    query: str
-    limit: int = 50

@@ -1,6 +1,7 @@
 import os
 import platform
 import shutil
+import subprocess
 from pathlib import Path
 
 BASE_DIR = str(Path(__file__).resolve().parent.parent)
@@ -11,6 +12,7 @@ CATALOG_PATH = os.path.join(BASE_DIR, "catalog.json")
 HTML_PATH = os.path.join(BASE_DIR, "browser.html")
 DB_PATH = os.path.join(BASE_DIR, "doclib.db")
 DEFAULT_PORT = 8765
+MAX_UPLOAD_SIZE = 4 * 1024 * 1024 * 1024  # 4 GB
 
 CAT_MAP = {
     "01": "重点报告",
@@ -35,9 +37,9 @@ def open_file_external(filepath: str):
     if system == "Windows":
         os.startfile(filepath)
     elif system == "Darwin":
-        os.system(f'open "{filepath}"')
+        subprocess.run(["open", filepath], check=False)
     else:
-        os.system(f'xdg-open "{filepath}"')
+        subprocess.run(["xdg-open", filepath], check=False)
 
 
 def find_7z():

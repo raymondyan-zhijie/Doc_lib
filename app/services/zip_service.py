@@ -61,7 +61,13 @@ def extract_file(work_path: str, target_dir: str = None):
     src = resolve_work_path(work_path)
     if not os.path.isfile(src):
         raise FileNotFoundError(f"File not found: {work_path}")
-    dst = os.path.join(target_dir, os.path.basename(src))
+    base = os.path.basename(src)
+    name, ext = os.path.splitext(base)
+    dst = os.path.join(target_dir, base)
+    counter = 1
+    while os.path.exists(dst):
+        dst = os.path.join(target_dir, f"{name}_{counter}{ext}")
+        counter += 1
     shutil.copy2(src, dst)
     return {
         "status": "ok",

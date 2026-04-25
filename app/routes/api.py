@@ -5,17 +5,22 @@ API routes for the Doc_Lib Catalog Browser.
 import datetime
 import json
 import os
+import platform
 import re
+import shutil
+import threading
+import time
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
-from app.config import BASE_DIR, ARCHIVES_DIR, WORK_DIR, CATALOG_PATH, CAT_MAP, HTML_PATH, open_file_external
+from app.config import BASE_DIR, ARCHIVES_DIR, CATALOG_PATH, HTML_PATH, MAX_UPLOAD_SIZE, open_file_external
 from app.models import (
     BatchExtractRequest,
     FavoriteItem,
 )
 from app.services import index_service, zip_service
+from app.services import catalog_service
 
 router = APIRouter(prefix="/api")
 
@@ -34,7 +39,6 @@ async def serve_html():
 
 @router.get("/catalog")
 async def get_catalog():
-    from fastapi.responses import Response
     if not os.path.isfile(CATALOG_PATH):
         raise HTTPException(404, "catalog.json not found")
     with open(CATALOG_PATH, "r", encoding="utf-8") as f:
@@ -72,7 +76,6 @@ async def extract_file(work_path: str = Query(...), target_dir: str = Query(""))
 @router.get("/config")
 async def get_config():
     """Return server-side config (paths, platform info)."""
-    import platform
     return {
         "base_dir": BASE_DIR,
         "default_extract_dir": os.path.join(BASE_DIR, "extracted"),
@@ -83,12 +86,16 @@ async def get_config():
 @router.get("/open-dir")
 async def open_dir(path: str = Query(...)):
     """Open a directory in the system file explorer. Creates it if needed."""
-    os.makedirs(path, exist_ok=True)
     try:
-        open_file_external(os.path.normpath(path))
-        return {"status": "opened", "path": path}
+        safe_path = zip_service._validate_path(os.path.abspath(path), BASE_DIR)
+    except PermissionError:
+        raise HTTPException(403, "Access denied: path outside allowed directory")
+    os.makedirs(safe_path, exist_ok=True)
+    try:
+        open_file_external(safe_path)
+        return {"status": "opened", "path": safe_path}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, "Failed to open directory")
 
 
 @router.get("/file")
@@ -195,7 +202,6 @@ async def upload_zip(
     week_label: str = Query("", description="e.g. 2026年4月第4周"),
 ):
     """Upload a new weekly ZIP archive: save to archives/, extract to work/, update catalog."""
-    import shutil
 
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(400, "Only .zip files are accepted")
@@ -218,12 +224,20 @@ async def upload_zip(
 
     # Save ZIP to archives/
     try:
+        total_size = 0
         with open(zip_path, "wb") as f:
             while True:
                 chunk = await file.read(8 * 1024 * 1024)
                 if not chunk:
                     break
+                total_size += len(chunk)
+                if total_size > MAX_UPLOAD_SIZE:
+                    f.close()
+                    os.remove(zip_path)
+                    raise HTTPException(413, f"File too large. Max size: {MAX_UPLOAD_SIZE // (1024**3)} GB")
                 f.write(chunk)
+    except HTTPException:
+        raise
     except Exception:
         if os.path.exists(zip_path):
             os.remove(zip_path)
@@ -236,7 +250,7 @@ async def upload_zip(
         raise HTTPException(500, f"Extraction failed: {e}")
 
     # Scan and index, then rebuild FTS so rowids stay aligned with catalog
-    new_count = _scan_work_week(week_label)
+    new_count = catalog_service.scan_work_week(week_label)
     index_service.build_full_index()
     return {
         "status": "ok",
@@ -252,93 +266,16 @@ async def upload_zip(
 @router.post("/shutdown")
 async def shutdown_server():
     """Gracefully shut down the server."""
-    import threading
 
     def _shutdown():
-        import time
         time.sleep(0.3)
         from app import main
         server = getattr(main, '_uvicorn_server', None)
         if server:
             server.should_exit = True
         else:
-            import os
             os._exit(0)
 
     threading.Thread(target=_shutdown, daemon=True).start()
     return {"status": "shutting_down"}
 
-
-# ============ Helpers ============
-
-def _scan_work_week(week_label: str) -> int:
-    """Scan work/{week_label}/ and add new entries to catalog.json + FTS index."""
-    week_dir = os.path.join(WORK_DIR, week_label)
-    if not os.path.isdir(week_dir):
-        return 0
-
-    if not os.path.exists(CATALOG_PATH):
-        return 0
-
-    with open(CATALOG_PATH, "r", encoding="utf-8") as f:
-        existing = json.load(f)
-
-    existing_keys = {item["work_path"].replace("\\", "/") for item in existing}
-    new_items = []
-
-    for root, dirs, files in os.walk(week_dir):
-        for fname in files:
-            rel_path = os.path.relpath(os.path.join(root, fname), WORK_DIR).replace("\\", "/")
-            if rel_path in existing_keys:
-                continue
-
-            parts = rel_path.split("/")
-            if len(parts) < 2:
-                continue
-            folder = parts[1]  # e.g. "01_重点报告-331份"
-            filename = fname
-            cat_match = re.match(r"(\d+)_", folder)
-            cat_num = cat_match.group(1) if cat_match else "?"
-            cat_name = CAT_MAP.get(cat_num, folder) if cat_match else folder
-            pages_match = re.search(r"[-—](\d+)页", filename)
-            pages = int(pages_match.group(1)) if pages_match else None
-            lang = "英文" if "(英)" in filename else "中文"
-            ext = os.path.splitext(filename)[1].lower()
-            source = ""
-            if cat_num == "02":
-                src_match = re.search(r"-\d{6}-(.+?)-\d+页", filename)
-                if src_match:
-                    source = src_match.group(1)
-            if cat_num == "03":
-                src_match = re.match(r"([A-Za-z\s&.]+?)[-_]", filename)
-                if src_match:
-                    source = src_match.group(1).strip()
-
-            file_path = os.path.join(root, fname)
-            size = os.path.getsize(file_path)
-            mtime = os.path.getmtime(file_path)
-            dt = datetime.datetime.fromtimestamp(mtime)
-            date_str = f"{dt.year}-{dt.month:02d}-{dt.day:02d}"
-
-            new_items.append({
-                "week": week_label,
-                "category": cat_name,
-                "cat_num": cat_num,
-                "filename": filename,
-                "work_path": rel_path,
-                "size": size,
-                "date": date_str,
-                "pages": pages,
-                "lang": lang,
-                "ext": ext,
-                "source": source,
-            })
-
-    if new_items:
-        existing.extend(new_items)
-        with open(CATALOG_PATH, "w", encoding="utf-8") as f:
-            json.dump(existing, f, ensure_ascii=False, indent=1)
-        index_service.invalidate_cache()
-        index_service.incremental_index(new_items)
-
-    return len(new_items)

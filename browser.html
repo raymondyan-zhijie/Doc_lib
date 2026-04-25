@@ -576,7 +576,6 @@ function resolveItem(el){
     return null;
   }
   const c=byIdx||byWp;
-  console.log('resolveItem','idxNum='+idxNum,'wpStr='+wpStr,'file='+c.filename,'work_path='+c.work_path);
   return c;
 }
 async function openFile(el){
@@ -588,7 +587,7 @@ async function extractFile(el){
   const c=resolveItem(el); if(!c)return;
   showToast('提取: '+c.filename+' → '+getExtractDir());
   const td=encodeURIComponent(getExtractDir());
-  try{const r=await fetch('/api/extract?work_path='+encodeURIComponent(c.work_path)+'&target_dir='+td);const d=await r.json();if(d.error)showToast(d.error,true);else{console.log('extract result',d);showToast('已提取: '+d.filename);}}catch(e){showToast(e.message,true);}
+  try{const r=await fetch('/api/extract?work_path='+encodeURIComponent(c.work_path)+'&target_dir='+td);const d=await r.json();if(d.error)showToast(d.error,true);else{showToast('已提取: '+d.filename);}}catch(e){showToast(e.message,true);}
 }
 
 async function toggleFav(idx){
@@ -659,11 +658,13 @@ async function previewPDF(el){
 // ======== EXTRACT DIR ========
 const EXTRACT_DIR_KEY='doclib_extract_dir';
 let _defaultExtractDir='';
+let _platform='Windows';
 async function initExtractDir(){
   try{
     const r=await fetch('/api/config');
     const cfg=await r.json();
     _defaultExtractDir=cfg.default_extract_dir||'';
+    _platform=cfg.platform||'Windows';
   }catch(e){_defaultExtractDir='';}
 }
 function getExtractDir(){
@@ -712,7 +713,8 @@ function setBatchDir(v){document.getElementById('batchTargetDir').value=v;update
 function updateBatchActualDir(){
   const td=document.getElementById('batchTargetDir').value.trim();
   const ts=new Date().toISOString().replace(/[-:]/g,'').replace('T','_').slice(0,15);
-  document.getElementById('batchActualDir').textContent=td+'\\'+ts;
+  const sep=_platform==='Windows'?'\\':'/';
+document.getElementById('batchActualDir').textContent=td+sep+ts;
 }
 async function startBatchExtract(){
   const items=[...selectedIds].map(i=>allItems[i]).filter(Boolean),td=document.getElementById('batchTargetDir').value.trim();

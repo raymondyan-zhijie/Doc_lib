@@ -15,6 +15,7 @@ from app.config import CATALOG_PATH, DB_PATH
 _lock = threading.Lock()
 _catalog = None
 _catalog_mtime = 0
+_catalog_by_wp = None
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -26,29 +27,48 @@ def _get_conn() -> sqlite3.Connection:
 
 def _get_catalog() -> list[dict]:
     """Load catalog.json from disk, with in-memory caching based on file mtime."""
-    global _catalog, _catalog_mtime
+    global _catalog, _catalog_mtime, _catalog_by_wp
     try:
         mtime = os.path.getmtime(CATALOG_PATH)
     except OSError:
         return []
-    if _catalog is None or mtime != _catalog_mtime:
-        with open(CATALOG_PATH, "r", encoding="utf-8") as f:
-            _catalog = json.load(f)
-        _catalog_mtime = mtime
-    return _catalog
+    with _lock:
+        if _catalog is None or mtime != _catalog_mtime:
+            with open(CATALOG_PATH, "r", encoding="utf-8") as f:
+                _catalog = json.load(f)
+            _catalog_mtime = mtime
+            _catalog_by_wp = {item["work_path"]: item for item in _catalog}
+        return _catalog
+
+
+def _get_catalog_by_wp() -> dict:
+    """Return catalog indexed by work_path for O(1) lookup."""
+    global _catalog_by_wp
+    _get_catalog()
+    return _catalog_by_wp or {}
 
 
 def invalidate_cache():
     """Force next _get_catalog() to reload from disk."""
-    global _catalog, _catalog_mtime
+    global _catalog, _catalog_mtime, _catalog_by_wp
     _catalog = None
     _catalog_mtime = 0
+    _catalog_by_wp = None
 
 
 def init_db():
-    """Create tables if they don't exist."""
+    """Create tables if they don't exist. Migrates old FTS schema if needed."""
     conn = _get_conn()
     try:
+        # Check if old FTS schema (content='', no work_path) exists and drop it
+        try:
+            cols = conn.execute("PRAGMA table_info('fts_index')").fetchall()
+            col_names = [c[1] for c in cols]
+            if "work_path" not in col_names:
+                conn.execute("DROP TABLE IF EXISTS fts_index")
+        except sqlite3.OperationalError:
+            pass  # Table doesn't exist yet
+
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS favorites (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,11 +87,11 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_history_opened ON history(opened_at DESC);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS fts_index USING fts5(
+                work_path,
                 filename,
                 category,
                 source,
                 week,
-                content='',
                 tokenize='unicode61'
             );
         """)
@@ -95,10 +115,10 @@ def build_full_index():
 
         conn.execute("BEGIN")
         try:
-            for i, item in enumerate(catalog):
+            for item in catalog:
                 conn.execute(
-                    "INSERT INTO fts_index(rowid, filename, category, source, week) VALUES (?, ?, ?, ?, ?)",
-                    (i + 1, item["filename"], item.get("category", ""), item.get("source", ""), item["week"]),
+                    "INSERT INTO fts_index(work_path, filename, category, source, week) VALUES (?, ?, ?, ?, ?)",
+                    (item["work_path"], item["filename"], item.get("category", ""), item.get("source", ""), item["week"]),
                 )
             conn.commit()
         except Exception:
@@ -115,14 +135,12 @@ def incremental_index(new_items: list[dict]):
     """Add new items to the FTS5 index without rebuilding."""
     conn = _get_conn()
     try:
-        max_row = conn.execute("SELECT MAX(rowid) FROM fts_index").fetchone()[0] or 0
         conn.execute("BEGIN")
         try:
             for item in new_items:
-                max_row += 1
                 conn.execute(
-                    "INSERT INTO fts_index(rowid, filename, category, source, week) VALUES (?, ?, ?, ?, ?)",
-                    (max_row, item["filename"], item.get("category", ""), item.get("source", ""), item["week"]),
+                    "INSERT INTO fts_index(work_path, filename, category, source, week) VALUES (?, ?, ?, ?, ?)",
+                    (item["work_path"], item["filename"], item.get("category", ""), item.get("source", ""), item["week"]),
                 )
             conn.commit()
         except Exception:
@@ -142,7 +160,7 @@ def search(query: str, limit: int = 50) -> list[dict]:
     try:
         try:
             rows = conn.execute(
-                "SELECT rowid FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT ?",
+                "SELECT work_path FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT ?",
                 (q, limit),
             ).fetchall()
         except sqlite3.OperationalError:
@@ -151,7 +169,7 @@ def search(query: str, limit: int = 50) -> list[dict]:
                 return []
             try:
                 rows = conn.execute(
-                    "SELECT rowid FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT ?",
+                    "SELECT work_path FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT ?",
                     (simple_q, limit),
                 ).fetchall()
             except sqlite3.OperationalError:
@@ -159,15 +177,15 @@ def search(query: str, limit: int = 50) -> list[dict]:
     finally:
         conn.close()
 
-    catalog = _get_catalog()
-    if not catalog:
+    by_wp = _get_catalog_by_wp()
+    if not by_wp:
         return []
 
     results = []
     for row in rows:
-        rid = row[0]
-        if 1 <= rid <= len(catalog):
-            results.append(catalog[rid - 1])
+        wp = row[0]
+        if wp in by_wp:
+            results.append(by_wp[wp])
 
     return results
 
