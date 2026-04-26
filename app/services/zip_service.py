@@ -78,6 +78,25 @@ def extract_file(work_path: str, target_dir: str = None):
     }
 
 
+def move_to_recycle_bin(work_path: str) -> str:
+    """Move a file from work/ to work/.recycle_bin/, preserving relative path structure."""
+    src = resolve_work_path(work_path)
+    if not os.path.isfile(src):
+        raise FileNotFoundError(f"File not found: {work_path}")
+    recycle_root = os.path.join(WORK_DIR, ".recycle_bin")
+    rel = os.path.relpath(src, WORK_DIR)
+    dst = os.path.join(recycle_root, rel)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    if os.path.exists(dst):
+        name, ext = os.path.splitext(dst)
+        counter = 1
+        while os.path.exists(f"{name}_{counter}{ext}"):
+            counter += 1
+        dst = f"{name}_{counter}{ext}"
+    shutil.move(src, dst)
+    return dst
+
+
 def serve_file(work_path: str):
     """Validate and return absolute path for serving via FileResponse."""
     path = resolve_work_path(work_path)

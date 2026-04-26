@@ -4,293 +4,147 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Doc_Lib 文档目录浏览器</title>
-<style>
-/* ======== CSS Variables / Theming ======== */
-:root, [data-theme="light"] {
-  --bg: #f5f5f7; --surface: #ffffff; --surface2: #fafafa; --border: #e0e0e0;
-  --text: #1d1d1f; --text2: #6e6e73; --text3: #aeaeb2;
-  --accent: #0071e3; --accent-hover: #0077ed; --accent-bg: #e8f0fe;
-  --cat01: #e8384f; --cat02: #3b82f6; --cat03: #10b981; --cat04: #f59e0b; --cat05: #8b5cf6;
-  --shadow: rgba(0,0,0,.08); --shadow2: rgba(0,0,0,.15);
-  --row-hover: #f0f5ff; --row-selected: #e8f0fe; --badge-bg: #e8e8ed;
-  --toast-bg: #1d1d1f; --toast-text: #fff;
-}
-[data-theme="dark"] {
-  --bg: #1a1a1e; --surface: #2c2c2e; --surface2: #232326; --border: #3a3a3c;
-  --text: #f5f5f7; --text2: #98989d; --text3: #636366;
-  --accent: #0a84ff; --accent-hover: #409cff; --accent-bg: #1c3a5e;
-  --cat01: #ff453a; --cat02: #0a84ff; --cat03: #30d158; --cat04: #ffd60a; --cat05: #bf5af2;
-  --shadow: rgba(0,0,0,.3); --shadow2: rgba(0,0,0,.5);
-  --row-hover: #2c3a50; --row-selected: #1c3a5e; --badge-bg: #3a3a3c;
-  --toast-bg: #f5f5f7; --toast-text: #1d1d1f;
-}
-
-/* ======== Reset & Base ======== */
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); overflow:hidden; height:100vh; transition:background .3s,color .3s; }
-a { color:var(--accent); text-decoration:none; }
-a:hover { text-decoration:underline; }
-
-/* ======== Layout ======== */
-.app { display:flex; flex-direction:column; height:100vh; }
-
-/* Header */
-.header { background:var(--surface); border-bottom:1px solid var(--border); padding:8px 16px; display:flex; align-items:center; gap:12px; flex-shrink:0; }
-.header h1 { font-size:16px; font-weight:600; white-space:nowrap; }
-.search-box { flex:1; max-width:420px; position:relative; }
-.search-box input { width:100%; padding:7px 12px 7px 34px; border:1px solid var(--border); border-radius:8px; font-size:13px; background:var(--surface); color:var(--text); outline:none; transition:border .2s; }
-.search-box input:focus { border-color:var(--accent); }
-.search-box .icon { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text2); font-size:14px; }
-.stats { font-size:12px; color:var(--text2); white-space:nowrap; }
-.header-actions { display:flex; gap:6px; align-items:center; }
-.icon-btn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:5px 8px; cursor:pointer; font-size:13px; color:var(--text2); transition:all .15s; }
-.icon-btn:hover { color:var(--text); border-color:var(--text2); }
-.icon-btn.active { color:var(--accent); border-color:var(--accent); }
-.extract-dir-row { display:flex; gap:6px; align-items:center; padding:4px 0 4px 0; }
-
-/* Filter Bar */
-.filter-bar { background:var(--surface); border-bottom:1px solid var(--border); padding:6px 16px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; flex-shrink:0; }
-.filter-group { display:flex; align-items:center; gap:3px; }
-.filter-group label { font-size:11px; color:var(--text2); margin-right:3px; white-space:nowrap; }
-.cat-btn { padding:2px 9px; border:1px solid var(--border); border-radius:12px; font-size:11px; cursor:pointer; background:var(--surface); color:var(--text); transition:all .15s; user-select:none; }
-.cat-btn.active { color:#fff; border-color:transparent; }
-.cat-btn[data-cat="01"].active { background:var(--cat01); }
-.cat-btn[data-cat="02"].active { background:var(--cat02); }
-.cat-btn[data-cat="03"].active { background:var(--cat03); }
-.cat-btn[data-cat="04"].active { background:var(--cat04); }
-.cat-btn[data-cat="05"].active { background:var(--cat05); }
-.sel { padding:2px 6px; border:1px solid var(--border); border-radius:5px; font-size:11px; background:var(--surface); color:var(--text); outline:none; max-width:140px; }
-.divider { width:1px; height:18px; background:var(--border); margin:0 2px; }
-
-/* Week Dropdown */
-.week-dd { position:relative; }
-.week-dd-btn { padding:2px 6px; border:1px solid var(--border); border-radius:5px; font-size:11px; background:var(--surface); color:var(--text); cursor:pointer; min-width:80px; display:flex; align-items:center; justify-content:space-between; gap:3px; }
-.week-dd-list { position:absolute; top:100%; left:0; z-index:50; background:var(--surface); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 16px var(--shadow2); min-width:190px; max-height:280px; overflow-y:auto; display:none; margin-top:3px; }
-.week-dd-list.open { display:block; }
-.week-dd-list .item { padding:4px 9px; display:flex; align-items:center; gap:5px; font-size:11px; cursor:pointer; color:var(--text); }
-.week-dd-list .item:hover { background:var(--row-hover); }
-.week-dd-list .item label { cursor:pointer; display:flex; align-items:center; gap:5px; width:100%; }
-.week-dd-list .item input { width:13px; height:13px; accent-color:var(--accent); }
-.week-dd-list .act-row { padding:5px 9px; border-top:1px solid var(--border); display:flex; gap:8px; font-size:10px; }
-.week-dd-list .act-row a { cursor:pointer; }
-
-/* Active Filters */
-.active-filters { background:var(--surface2); border-bottom:1px solid var(--border); padding:3px 16px; display:flex; align-items:center; gap:5px; flex-wrap:wrap; min-height:0; overflow:hidden; }
-.active-filters.has-chips { min-height:24px; }
-.chip { padding:1px 7px; border-radius:9px; font-size:10px; background:var(--badge-bg); color:var(--text); display:inline-flex; align-items:center; gap:3px; }
-.chip .x { cursor:pointer; color:var(--text2); font-weight:bold; font-size:11px; }
-.chip .x:hover { color:var(--text); }
-
-/* ======== Table ======== */
-.table-wrap { flex:1; display:flex; flex-direction:column; overflow:hidden; }
-.table-header { display:grid; grid-template-columns:36px 110px 80px 90px 1fr 42px 56px 80px 36px 70px; align-items:center; background:var(--surface); border-bottom:2px solid var(--border); flex-shrink:0; padding:0 6px; height:40px; user-select:none; }
-.table-header .col { font-size:11px; font-weight:600; color:var(--text2); cursor:pointer; display:flex; align-items:center; gap:1px; padding:0 3px; white-space:nowrap; }
-.table-header .col:hover { color:var(--text); }
-.table-header .col .arrow { font-size:9px; }
-.col-resizer { position:absolute; right:0; top:0; bottom:0; width:4px; cursor:col-resize; z-index:1; }
-.col-resizer:hover,.col-resizer.active { background:var(--accent); }
-.table-header .col { position:relative; overflow:visible; }
-.table-body { flex:1; overflow-y:auto; position:relative; }
-.table-spacer { width:100%; }
-.table-rows { position:absolute; top:0; left:0; right:0; padding:0 6px; }
-.table-row { display:grid; grid-template-columns:36px 110px 80px 90px 1fr 42px 56px 80px 36px 70px; align-items:center; height:32px; border-bottom:1px solid var(--border); cursor:pointer; transition:background .1s; font-size:12px; }
-.table-row:hover { background:var(--row-hover); }
-.table-row.selected { background:var(--row-selected); }
-.table-row.active-detail { background:var(--row-selected); border-left:3px solid var(--accent); padding-left:3px; }
-.table-row .cell { padding:0 3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.table-row .cell.week { font-size:11px; color:var(--text2); }
-.table-row .cell.source { font-size:11px; color:var(--text2); }
-.table-row .cell.filename { font-weight:500; }
-.table-row .cell.pages { text-align:right; font-size:11px; color:var(--text2); }
-.table-row .cell.size { text-align:right; font-size:11px; color:var(--text2); }
-.table-row .cell.date { font-size:11px; color:var(--text2); }
-.table-row .cell.ext { text-align:center; }
-.table-row .cell.actions { display:flex; gap:3px; justify-content:center; }
-.cat-tag { display:inline-block; padding:1px 7px; border-radius:9px; font-size:10px; color:#fff; font-weight:500; }
-.cat-tag[data-cat="01"] { background:var(--cat01); }
-.cat-tag[data-cat="02"] { background:var(--cat02); }
-.cat-tag[data-cat="03"] { background:var(--cat03); }
-.cat-tag[data-cat="04"] { background:var(--cat04); }
-.cat-tag[data-cat="05"] { background:var(--cat05); }
-.ext-badge { font-size:9px; padding:1px 4px; border-radius:3px; background:var(--badge-bg); color:var(--text2); }
-.ext-badge.non-pdf { background:#fef3c7; color:#92400e; }
-[data-theme="dark"] .ext-badge.non-pdf { background:#422006; color:#fbbf24; }
-input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:var(--accent); }
-.btn-sm { padding:2px 6px; border:none; border-radius:3px; font-size:10px; cursor:pointer; transition:background .15s; }
-.btn-open { background:#dbeafe; color:#1e40af; }
-[data-theme="dark"] .btn-open { background:#1e3a5f; color:#93c5fd; }
-.btn-extract { background:#dcfce7; color:#166534; }
-[data-theme="dark"] .btn-extract { background:#14532d; color:#86efac; }
-.btn-fav { background:transparent; border:none; cursor:pointer; font-size:13px; padding:0 2px; color:var(--text3); }
-.btn-fav.is-fav { color:#f59e0b; }
-
-/* Empty State */
-.empty-state { text-align:center; padding:60px 20px; color:var(--text2); font-size:14px; }
-
-/* ======== Bottom Bar ======== */
-.bottom-bar { background:var(--surface); border-top:1px solid var(--border); padding:6px 16px; display:flex; align-items:center; gap:10px; flex-shrink:0; min-height:0; overflow:hidden; }
-.bottom-bar.visible { min-height:42px; }
-.sel-count { font-size:12px; font-weight:500; }
-.sel-size { font-size:11px; color:var(--text2); }
-.btn { padding:6px 14px; border:none; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; transition:all .15s; }
-.btn-primary { background:var(--accent); color:#fff; }
-.btn-primary:hover { background:var(--accent-hover); }
-.btn-primary:disabled { opacity:.5; cursor:not-allowed; }
-.btn-secondary { background:var(--badge-bg); color:var(--text); }
-.btn-clear { background:transparent; color:var(--text2); font-size:11px; }
-.btn-danger { background:#e74c3c; color:#fff; }
-
-/* ======== Panels ======== */
-.overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.35); z-index:100; display:none; }
-.overlay.visible { display:block; }
-.panel { position:fixed; top:0; right:0; width:400px; height:100vh; background:var(--surface); box-shadow:-4px 0 24px var(--shadow2); z-index:101; transform:translateX(100%); transition:transform .25s ease; overflow-y:auto; padding:20px; }
-.panel.visible { transform:translateX(0); }
-.panel h2 { font-size:14px; margin-bottom:14px; line-height:1.5; word-break:break-all; }
-.panel .field { margin-bottom:10px; }
-.panel .field .label { font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; margin-bottom:2px; }
-.panel .field .value { font-size:13px; }
-.panel .panel-actions { margin-top:16px; display:flex; gap:6px; flex-wrap:wrap; }
-.panel-close { position:absolute; top:14px; right:14px; background:none; border:none; font-size:18px; cursor:pointer; color:var(--text2); }
-
-/* ======== Dialog ======== */
-.dialog-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.35); z-index:200; display:none; }
-.dialog-overlay.visible { display:flex; align-items:center; justify-content:center; }
-.dialog { background:var(--surface); border-radius:12px; padding:20px; width:480px; max-height:80vh; overflow-y:auto; box-shadow:0 8px 32px var(--shadow2); }
-.dialog h3 { font-size:15px; margin-bottom:14px; }
-.dialog .file-list { max-height:180px; overflow-y:auto; border:1px solid var(--border); border-radius:5px; margin-bottom:10px; font-size:11px; }
-.dialog .file-list div { padding:3px 7px; border-bottom:1px solid var(--border); }
-.dialog .field { margin-bottom:10px; }
-.dialog .field label { display:block; font-size:12px; margin-bottom:3px; }
-.dialog .field input { width:100%; padding:6px 8px; border:1px solid var(--border); border-radius:5px; font-size:12px; background:var(--surface); color:var(--text); outline:none; }
-.dialog .field input:focus { border-color:var(--accent); }
-.dialog .actions { display:flex; justify-content:flex-end; gap:6px; margin-top:14px; }
-.progress-bar { width:100%; height:6px; background:var(--badge-bg); border-radius:3px; overflow:hidden; margin-top:6px; }
-.progress-bar .fill { height:100%; background:var(--accent); transition:width .3s; border-radius:3px; }
-.progress-text { font-size:11px; color:var(--text2); margin-top:3px; }
-
-/* ======== Stats Panel ======== */
-.stats-panel { position:fixed; top:0; right:0; width:520px; height:100vh; background:var(--surface); box-shadow:-4px 0 24px var(--shadow2); z-index:101; transform:translateX(100%); transition:transform .25s ease; overflow-y:auto; padding:20px; }
-.stats-panel.visible { transform:translateX(0); }
-.stats-panel h2 { font-size:15px; margin-bottom:14px; }
-.stats-chart { margin-bottom:20px; }
-.stats-chart h3 { font-size:12px; color:var(--text2); margin-bottom:8px; }
-.bar-row { display:flex; align-items:center; gap:8px; margin-bottom:3px; font-size:11px; }
-.bar-label { width:100px; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text2); }
-.bar-track { flex:1; height:16px; background:var(--badge-bg); border-radius:3px; overflow:hidden; position:relative; }
-.bar-fill { height:100%; border-radius:3px; transition:width .3s; }
-.bar-value { position:absolute; right:4px; top:1px; font-size:9px; color:var(--text2); }
-
-/* ======== Toast ======== */
-.toast-container { position:fixed; top:12px; right:12px; z-index:400; display:flex; flex-direction:column; gap:6px; pointer-events:none; }
-.toast { padding:8px 14px; border-radius:6px; font-size:12px; color:var(--toast-text); background:var(--toast-bg); box-shadow:0 4px 12px var(--shadow2); pointer-events:auto; opacity:0; transform:translateX(20px); animation:toast-in .2s ease forwards; max-width:320px; word-break:break-all; }
-.toast.error { background:#dc2626; color:#fff; }
-[data-theme="dark"] .toast { background:#f5f5f7; color:#1d1d1f; }
-[data-theme="dark"] .toast.error { background:#dc2626; color:#fff; }
-@keyframes toast-in { to { opacity:1; transform:translateX(0); } }
-@keyframes toast-out { to { opacity:0; transform:translateX(20px); } }
-
-/* Loading */
-.loading { position:fixed; top:0; left:0; right:0; bottom:0; background:var(--surface); display:flex; align-items:center; justify-content:center; z-index:300; flex-direction:column; gap:14px; }
-.loading .spinner { width:28px; height:28px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; }
-@keyframes spin { to { transform:rotate(360deg); } }
-</style>
+<link rel="stylesheet" href="/static/css/styles.css" />
 </head>
 <body>
 
-<div class="loading" id="loading"><div class="spinner"></div><div>正在加载目录数据...</div></div>
+<!-- Loading -->
+<div class="loading" id="loading">
+  <div class="spinner"></div>
+  <div>正在加载目录数据...</div>
+</div>
+
+<!-- Toasts -->
 <div class="toast-container" id="toastContainer"></div>
 
+<!-- App -->
 <div class="app" id="app" style="display:none">
-  <!-- Header -->
-  <div class="header">
-    <h1>Doc_Lib</h1>
-    <div class="search-box">
-      <span class="icon">&#128269;</span>
-      <input type="text" id="searchInput" placeholder="搜索文件名或内容..." />
+
+  <!-- Command Bar -->
+  <div class="command-bar">
+    <div class="command-left">
+      <button class="cmd-btn primary" onclick="showUploadDialog()">
+        <span class="icon">+</span> 上传
+      </button>
+      <button class="cmd-btn" id="batchBtn" disabled onclick="showBatchDialog()">
+        <span class="icon">&#128203;</span> 批量提取
+      </button>
+      <button class="cmd-btn danger" id="batchDelBtn" disabled onclick="batchRecycle()">
+        <span class="icon">&#128465;</span> 批量回收
+      </button>
+      <button class="cmd-btn" id="clearSelBtn" style="display:none" onclick="clearSel()">清除选择</button>
     </div>
-    <div class="stats" id="statsText">加载中...</div>
-    <div class="header-actions">
-      <button class="icon-btn" id="favFilterBtn" title="仅显示收藏" onclick="toggleFavFilter()">&#9734;</button>
-      <button class="icon-btn" id="historyBtn" title="浏览历史" onclick="showHistory()">&#128337;</button>
-      <button class="icon-btn" id="addDataBtn" title="添加新数据" onclick="showUploadDialog()">+</button>
-      <button class="icon-btn" id="statsBtn" title="来源统计" onclick="showStats()">&#128202;</button>
-      <button class="icon-btn" id="extractDirBtn" title="设置提取目录" onclick="toggleExtractDir()">&#128193;</button>
-      <button class="icon-btn" id="darkModeBtn" title="切换暗色模式" onclick="toggleDarkMode()">&#9790;</button>
-    </div>
-    <div class="extract-dir-row" id="extractDirRow" style="display:none">
-      <span style="font-size:12px;color:var(--text2);white-space:nowrap">提取到&#8201;</span>
-      <input type="text" id="extractDirInput" style="flex:1;font-size:12px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);min-width:160px" />
-      <button class="btn-sm btn-extract" onclick="openExtractDir()" title="打开目录">&#128194;</button>
+    <div class="command-right">
+      <div class="search-box">
+        <span class="search-icon">&#128269;</span>
+        <input type="text" id="searchInput" placeholder="搜索文件名..." />
+      </div>
+      <button class="cmd-btn" id="favFilterBtn" onclick="toggleFavFilter()" title="仅显示收藏">&#11088; 收藏</button>
+      <button class="cmd-btn" id="historyBtn" onclick="showHistory()">&#128337;</button>
+      <button class="cmd-btn" id="statsBtn" onclick="showStats()">&#128202;</button>
+      <button class="cmd-btn" id="extractDirBtn" onclick="toggleExtractDir()">&#128193;</button>
+      <button class="cmd-btn" id="darkModeBtn" onclick="toggleDarkMode()">&#9790;</button>
     </div>
   </div>
 
-  <!-- Filter Bar -->
-  <div class="filter-bar">
-    <div class="filter-group">
-      <label>周次</label>
-      <div class="week-dd" id="weekDd">
-        <div class="week-dd-btn" id="weekDdBtn">全部周次 &#9662;</div>
-        <div class="week-dd-list" id="weekDdList"></div>
+  <!-- Extract Dir Row -->
+  <div class="extract-dir-row" id="extractDirRow" style="display:none;padding:4px 16px;background:var(--surface2);border-bottom:1px solid var(--border);gap:6px;align-items:center">
+    <span style="font-size:13px;color:var(--text2);white-space:nowrap">提取到 </span>
+    <input type="text" id="extractDirInput" style="flex:1;font-size:13px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)" />
+    <button class="btn-sm btn-extract" onclick="openExtractDir()">&#128194; 打开</button>
+  </div>
+
+  <!-- Main Layout -->
+  <div class="main-layout">
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="nav-section">
+        <div class="nav-header">
+          年份
+          <div class="nav-actions">
+            <a onclick="sidebarYearChecked=new Set(yearOrder);rebuildSidebarCascade()">全选</a>
+            <a onclick="sidebarYearChecked=new Set([yearOrder[0]]);rebuildSidebarCascade()">清空</a>
+          </div>
+        </div>
+        <div id="yearNav"></div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-header">
+          月份
+          <div class="nav-actions">
+            <a onclick="monthSelAll()">全选</a>
+            <a onclick="monthSelNone()">清空</a>
+          </div>
+        </div>
+        <div id="monthNav"></div>
+      </div>
+
+      <div class="nav-divider"></div>
+
+      <div class="nav-section">
+        <div class="nav-header">分类</div>
+        <div id="catNav"></div>
+      </div>
+
+      <div class="nav-section" id="sourceSection" style="display:none">
+        <div class="nav-header">来源</div>
+        <select class="sel" id="sourceSel" style="width:100%;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);margin:4px 0">
+          <option value="">全部来源</option>
+        </select>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-header">类型</div>
+        <select id="extNav" style="width:100%;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);margin:4px 0">
+          <option value="">全部</option>
+        </select>
+      </div>
+
+      <div class="nav-bottom">
+        <div class="nav-link" id="recycleBtn" onclick="showRecycleStatus()">
+          <span class="icon">&#128465;</span> 回收站
+        </div>
       </div>
     </div>
-    <div class="divider"></div>
-    <div class="filter-group">
-      <label>年份</label>
-      <div class="week-dd" id="yearDd">
-        <div class="week-dd-btn" id="yearDdBtn">全部年份 &#9662;</div>
-        <div class="week-dd-list" id="yearDdList"></div>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- Active Filters -->
+      <div class="active-filters" id="activeFilters"></div>
+
+      <!-- Table -->
+      <div class="table-wrap">
+        <div class="table-header" id="tableHeader">
+          <div class="col"><input type="checkbox" id="selectAll" title="全选" /></div>
+          <div class="col" data-sort="cat_num">分类 <span class="arrow"></span></div>
+          <div class="col" data-sort="source">来源 <span class="arrow"></span></div>
+          <div class="col" data-sort="filename">文件名 <span class="arrow"></span></div>
+          <div class="col" data-sort="pages">页</div>
+          <div class="col" data-sort="size">大小 <span class="arrow"></span></div>
+          <div class="col" data-sort="date">日期 <span class="arrow"></span></div>
+          <div class="col">类型</div>
+          <div class="col actions-col">操作</div>
+        </div>
+        <div class="table-body" id="tableBody">
+          <div class="table-spacer" id="tableSpacer"></div>
+          <div class="table-rows" id="tableRows"></div>
+        </div>
       </div>
-    </div>
-    <div class="divider"></div>
-    <div class="filter-group">
-      <label>分类</label>
-      <button class="cat-btn active" data-cat="01">重点</button>
-      <button class="cat-btn active" data-cat="02">券商</button>
-      <button class="cat-btn active" data-cat="03">投行</button>
-      <button class="cat-btn active" data-cat="04">小报告</button>
-      <button class="cat-btn active" data-cat="05">杂货</button>
-    </div>
-    <div class="divider"></div>
-    <div class="filter-group" id="sourceGroup" style="display:none">
-      <label>来源</label>
-      <select class="sel" id="sourceSel"><option value="">全部</option></select>
-    </div>
-    <div class="divider" id="sourceDivider" style="display:none"></div>
-    <div class="filter-group">
-      <label>类型</label>
-      <select class="sel" id="extSel"><option value="">全部</option></select>
-    </div>
-  </div>
 
-  <div class="active-filters" id="activeFilters"></div>
+      <!-- Status Bar -->
+      <div class="status-bar">
+        <span class="count">共 <span id="totalCount">--</span></span>
+        <span class="count">| 筛选 <span id="filteredCount">--</span></span>
+        <span class="sel-info hidden" id="selCount" style="margin-left:12px"></span>
+        <span class="sel-info hidden" id="selSize" style="color:var(--text2)"></span>
+        <span style="flex:1"></span>
+        <span class="count" id="statsText"></span>
+      </div>
 
-  <!-- Table -->
-  <div class="table-wrap">
-    <div class="table-header" id="tableHeader">
-      <div class="col"><input type="checkbox" id="selectAll" title="全选" /></div>
-      <div class="col" data-sort="week">周次 <span class="arrow"></span></div>
-      <div class="col" data-sort="cat_num">分类 <span class="arrow"></span></div>
-      <div class="col" data-sort="source">来源 <span class="arrow"></span></div>
-      <div class="col" data-sort="filename">文件名 <span class="arrow"></span></div>
-      <div class="col" data-sort="pages">页</div>
-      <div class="col" data-sort="size">大小 <span class="arrow"></span></div>
-      <div class="col" data-sort="date">日期 <span class="arrow"></span></div>
-      <div class="col">类型</div>
-      <div class="col actions-col">操作</div>
     </div>
-    <div class="table-body" id="tableBody">
-      <div class="table-spacer" id="tableSpacer"></div>
-      <div class="table-rows" id="tableRows"></div>
-    </div>
-  </div>
-
-  <!-- Bottom Bar -->
-  <div class="bottom-bar" id="bottomBar">
-    <span class="sel-count" id="selCount"></span>
-    <span class="sel-size" id="selSize"></span>
-    <button class="btn btn-primary" id="batchBtn" disabled>批量提取</button>
-    <button class="btn btn-danger" id="batchDelBtn" disabled>批量删除</button>
-    <button class="btn-clear" id="clearSelBtn">清除选择</button>
   </div>
 </div>
 
@@ -310,7 +164,15 @@ input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:v
   <div id="statsContent"></div>
 </div>
 
-<!-- Batch Dialog -->
+<!-- History Panel -->
+<div class="overlay" id="historyOverlay"></div>
+<div class="panel" id="historyPanel">
+  <button class="panel-close" id="historyClose">&times;</button>
+  <h2>浏览历史</h2>
+  <div id="historyContent"></div>
+</div>
+
+<!-- Batch Extract Dialog -->
 <div class="dialog-overlay" id="batchDialog">
   <div class="dialog">
     <h3>批量提取文件</h3>
@@ -319,15 +181,15 @@ input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:v
       <label>提取到目录（自动创建时间戳子目录）</label>
       <input type="text" id="batchTargetDir" />
     </div>
-    <div class="field" style="font-size:11px;color:var(--text2);margin-bottom:8px">
-      实际提取到: <span id="batchActualDir" style="font-family:monospace;font-size:10px"></span>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">
+      实际提取到: <span id="batchActualDir" style="font-family:monospace;font-size:11px"></span>
     </div>
     <div class="field">
       <label>预设目录</label>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">
-        <button class="btn-sm btn-secondary" onclick="setBatchDir(getExtractDir())">提取目录</button>
-        <button class="btn-sm btn-secondary" onclick="setBatchDir(getExtractDir()+'/券商')">券商</button>
-        <button class="btn-sm btn-secondary" onclick="setBatchDir(getExtractDir()+'/投行')">投行</button>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+        <button class="btn-sm" style="background:var(--badge-bg);color:var(--text);border:1px solid var(--border);font-size:12px" onclick="setBatchDir(getExtractDir())">提取目录</button>
+        <button class="btn-sm" style="background:var(--badge-bg);color:var(--text);border:1px solid var(--border);font-size:12px" onclick="setBatchDir(getExtractDir()+'/券商')">券商</button>
+        <button class="btn-sm" style="background:var(--badge-bg);color:var(--text);border:1px solid var(--border);font-size:12px" onclick="setBatchDir(getExtractDir()+'/投行')">投行</button>
       </div>
     </div>
     <div id="batchProgress" style="display:none">
@@ -335,8 +197,24 @@ input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:v
       <div class="progress-text" id="batchProgressText"></div>
     </div>
     <div class="actions">
-      <button class="btn btn-secondary" id="batchCancelBtn">取消</button>
-      <button class="btn btn-primary" id="batchStartBtn">开始提取</button>
+      <button class="btn-sm" style="font-size:13px;padding:6px 14px;background:var(--badge-bg);color:var(--text);border:1px solid var(--border)" id="batchCancelBtn">取消</button>
+      <button class="btn-sm btn-open" style="font-size:13px;padding:6px 14px" id="batchStartBtn">开始提取</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirm Dialog -->
+<div class="dialog-overlay" id="deleteDialog">
+  <div class="dialog delete-confirm">
+    <h3>移至回收站</h3>
+    <div class="warning">
+      文件将被移动到回收站 (<code>.recycle_bin/</code>)，可从回收站恢复。
+    </div>
+    <div>以下 <b id="deleteCount">0</b> 个文件将被回收：</div>
+    <div class="file-list" id="deleteFileList" style="margin-top:8px"></div>
+    <div class="actions">
+      <button class="btn-sm" style="font-size:13px;padding:6px 14px;background:var(--badge-bg);color:var(--text);border:1px solid var(--border)" onclick="closeDeleteDialog()">取消</button>
+      <button class="btn-sm btn-danger" style="font-size:13px;padding:6px 14px" onclick="confirmDeleteAction()">移至回收站</button>
     </div>
   </div>
 </div>
@@ -353,745 +231,64 @@ input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:v
            ondragleave="this.style.borderColor='var(--border)'"
            ondrop="handleFileDrop(event)"
            onclick="document.getElementById('uploadFileInput').click()">
-        <div style="font-size:28px;margin-bottom:6px">&#128230;</div>
-        <div style="font-size:13px;color:var(--text)" id="uploadFileName">拖拽一个或多个 ZIP 文件到此处或点击选择</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:4px">仅支持 .zip 文件，单个上限 8 GB，可多选</div>
+        <div style="font-size:32px;margin-bottom:6px">&#128230;</div>
+        <div style="font-size:14px;color:var(--text)" id="uploadFileName">拖拽一个或多个 ZIP 文件到此处或点击选择</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px">仅支持 .zip 文件，单个上限 8 GB，可多选</div>
         <input type="file" id="uploadFileInput" accept=".zip" multiple style="display:none" onchange="handleFileSelect(event)" />
       </div>
     </div>
-    <div id="uploadFileList" style="margin-top:8px;max-height:160px;overflow-y:auto;display:none"></div>
+    <div id="uploadFileList" style="margin-top:8px;max-height:180px;overflow-y:auto;display:none"></div>
     <div id="uploadProgress" style="display:none;margin-top:8px">
       <div class="progress-bar"><div class="fill" id="uploadProgressFill"></div></div>
       <div class="progress-text" id="uploadProgressText"></div>
     </div>
     <div class="actions">
-      <button class="btn btn-secondary" id="uploadCancelBtn">取消</button>
-      <button class="btn btn-primary" id="uploadStartBtn" disabled>上传并添加到目录</button>
+      <button class="btn-sm" style="font-size:13px;padding:6px 14px;background:var(--badge-bg);color:var(--text);border:1px solid var(--border)" id="uploadCancelBtn">取消</button>
+      <button class="btn-sm btn-open" style="font-size:13px;padding:6px 14px" id="uploadStartBtn" disabled>上传并添加到目录</button>
     </div>
   </div>
 </div>
 
-<!-- History Panel -->
-<div class="overlay" id="historyOverlay"></div>
-<div class="panel" id="historyPanel">
-  <button class="panel-close" id="historyClose">&times;</button>
-  <h2>浏览历史</h2>
-  <div id="historyContent"></div>
-</div>
+<!-- Scripts — loaded in dependency order -->
+<script src="/static/js/app.js"></script>
+<script src="/static/js/filters.js"></script>
+<script src="/static/js/table.js"></script>
+<script src="/static/js/dialogs.js"></script>
+<script src="/static/js/upload.js"></script>
 
 <script>
-// ======== STATE ========
-let allItems=[], filteredItems=[], weekOrder=[], yearOrder=[], itemByPath=new Map();
-let selectedIds=new Set(), sortCols=[{col:'date',dir:'desc'}], searchQuery='';
-let activeCats=new Set(['01','02','03','04','05']), activeSource='', activeExt='', showFavOnly=false;
-let favoritesSet=new Set(); // work_path keys
-let activeDetailPath=null; // work_path of row shown in detail panel
-let token=''; // CSRF token from server
-
-const ROW_H=32, BUFFER=12;
-const CAT_NAMES={'01':'重点报告','02':'国内券商','03':'投行报告','04':'小报告','05':'杂货'};
-const CAT_COLORS={'01':'var(--cat01)','02':'var(--cat02)','03':'var(--cat03)','04':'var(--cat04)','05':'var(--cat05)'};
-
-// ======== INIT ========
-async function init(){
-  try{
-    initExtractDir();
-    const [catalogResp, favResp, cfgResp] = await Promise.all([
-      fetch('/api/catalog'),
-      fetch('/api/favorites'),
-      fetch('/api/config'),
-    ]);
-    allItems = await catalogResp.json();
-    const favs = await favResp.json();
-    const cfg = await cfgResp.json();
-    token = cfg.token || '';
-    favs.forEach(f => favoritesSet.add(f.work_path));
-
-    allItems.forEach(c => { itemByPath.set(c.work_path, c); });
-    const ws = new Set(allItems.map(c=>c.week));
-    weekOrder = [...ws].sort((a,b)=>{
-      const ma=a.match(/(\d+)年(\d+)月第(\d+)周/), mb=b.match(/(\d+)年(\d+)月第(\d+)周/);
-      if(!ma||!mb) return a.localeCompare(b);
-      return (ma[1]-mb[1])||(ma[2]-mb[2])||(ma[3]-mb[3]);
-    });
-    const yrs=new Set();
-    weekOrder.forEach(w=>{const m=w.match(/(\d+)年/);if(m)yrs.add(m[1]);});
-    yearOrder=[...yrs].sort();
-    buildFilters(); applyFilters();
-    document.getElementById('loading').style.display='none';
-    document.getElementById('app').style.display='flex';
-    // Init dark mode from localStorage
-    if(localStorage.getItem('doclib-theme')==='dark'){ document.documentElement.dataset.theme='dark'; document.getElementById('darkModeBtn').classList.add('active'); }
-  }catch(e){
-    document.getElementById('loading').innerHTML='<div style="color:red">加载失败: '+e.message+'<br>请确保 server.py 正在运行</div>';
-  }
-}
-
-// ======== FILTERS ========
-function buildFilters(){
-  const wl=document.getElementById('weekDdList');
-  let h='<div class="act-row"><a onclick="weekSelAll()">全选</a><a onclick="weekSelNone()">清空</a></div>';
-  weekOrder.forEach(w=>{
-    const cnt=allItems.filter(c=>c.week===w).length;
-    h+=`<div class="item"><label><input type="checkbox" value="${esc(w)}" checked /> ${esc(w)} (${cnt})</label></div>`;
-  });
-  wl.innerHTML=h;
-  wl.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.addEventListener('change',()=>{updateWeekBtn();applyFilters();}));
-  updateWeekBtn();
-
-  const yl=document.getElementById('yearDdList');
-  let yh='<div class="act-row"><a onclick="yearSelAll()">全选</a><a onclick="yearSelNone()">清空</a></div>';
-  yearOrder.forEach(y=>{
-    const cnt=allItems.filter(c=>c.week.startsWith(y+'年')).length;
-    yh+=`<div class="item"><label><input type="checkbox" value="${y}" checked /> ${y}年 (${cnt})</label></div>`;
-  });
-  yl.innerHTML=yh;
-  yl.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.addEventListener('change',()=>{updateYearBtn();applyFilters();}));
-  updateYearBtn();
-
-  const exts={};
-  allItems.forEach(c=>{exts[c.ext]=(exts[c.ext]||0)+1;});
-  const es=document.getElementById('extSel');
-  es.innerHTML='<option value="">全部</option>';
-  Object.entries(exts).sort((a,b)=>b[1]-a[1]).forEach(([e,n])=>{const o=document.createElement('option');o.value=e;o.textContent=`${e} (${n})`;es.appendChild(o);});
-  updateSourceFilter();
-}
-
-function updateWeekBtn(){
-  const btn=document.getElementById('weekDdBtn'), list=document.getElementById('weekDdList');
-  const ck=list.querySelectorAll('input:checked').length, tot=weekOrder.length;
-  btn.innerHTML=(ck===0||ck===tot)?`全部周次 &#9662;`:`${ck}/${tot} 周 &#9662;`;
-}
-function weekSelAll(){document.getElementById('weekDdList').querySelectorAll('input[type="checkbox"]').forEach(c=>c.checked=true);updateWeekBtn();applyFilters();}
-function weekSelNone(){document.getElementById('weekDdList').querySelectorAll('input[type="checkbox"]').forEach(c=>c.checked=false);updateWeekBtn();applyFilters();}
-function clearWeekFilter(){weekSelAll();}
-
-function updateYearBtn(){
-  const btn=document.getElementById('yearDdBtn'), list=document.getElementById('yearDdList');
-  const ck=list.querySelectorAll('input:checked').length, tot=yearOrder.length;
-  btn.innerHTML=(ck===0||ck===tot)?`全部年份 &#9662;`:`${ck}/${tot} 年 &#9662;`;
-}
-function yearSelAll(){document.getElementById('yearDdList').querySelectorAll('input[type="checkbox"]').forEach(c=>c.checked=true);updateYearBtn();applyFilters();}
-function yearSelNone(){document.getElementById('yearDdList').querySelectorAll('input[type="checkbox"]').forEach(c=>c.checked=false);updateYearBtn();applyFilters();}
-function clearYearFilter(){yearSelAll();}
-
-function updateSourceFilter(){
-  const show=activeCats.has('02')||activeCats.has('03');
-  document.getElementById('sourceGroup').style.display=show?'':'none';
-  document.getElementById('sourceDivider').style.display=show?'':'none';
-  const ss=document.getElementById('sourceSel');const src={};
-  allItems.forEach(c=>{if((activeCats.has('02')&&c.cat_num==='02')||(activeCats.has('03')&&c.cat_num==='03')){if(c.source)src[c.source]=(src[c.source]||0)+1;}});
-  ss.innerHTML='<option value="">全部</option>';
-  Object.entries(src).sort((a,b)=>b[1]-a[1]).forEach(([s,n])=>{const o=document.createElement('option');o.value=s;o.textContent=`${s} (${n})`;ss.appendChild(o);});
-  activeSource='';
-}
-
-function applyFilters(){
-  let items=allItems.slice();
-  if(activeCats.size<5) items=items.filter(c=>activeCats.has(c.cat_num));
-  // Week
-  const wl=document.getElementById('weekDdList');
-  const checked=new Set([...wl.querySelectorAll('input:checked')].map(c=>c.value));
-  if(checked.size===0) items=[];
-  else if(checked.size<weekOrder.length) items=items.filter(c=>checked.has(c.week));
-  // Year
-  const yl2=document.getElementById('yearDdList');
-  const checkedYears=new Set([...yl2.querySelectorAll('input:checked')].map(c=>c.value));
-  if(checkedYears.size===0) items=[];
-  else if(checkedYears.size<yearOrder.length) items=items.filter(c=>{const m=c.week.match(/(\d+)年/);return m&&checkedYears.has(m[1]);});
-  if(activeSource) items=items.filter(c=>c.source===activeSource);
-  if(activeExt) items=items.filter(c=>c.ext===activeExt);
-  if(showFavOnly) items=items.filter(c=>favoritesSet.has(c.work_path));
-  if(searchQuery){const q=searchQuery.toLowerCase();items=items.filter(c=>c.filename.toLowerCase().includes(q));}
-  filteredItems=items; applySort();
-  renderActiveFilters(); updateStats();
-  document.getElementById('tableBody').scrollTop=0;
-  renderTable();
-}
-
-function applySort(){
-  filteredItems.sort((a,b)=>{
-    for(let i=0;i<sortCols.length;i++){
-      const s=sortCols[i];
-      const dir=s.dir==='asc'?1:-1;
-      let va=a[s.col],vb=b[s.col];
-      if(s.col==='size'||s.col==='pages'){
-        va=va||0;vb=vb||0;
-        const diff=(va-vb)*dir;
-        if(diff!==0)return diff;
-        continue;
-      }
-      if(s.col==='week'){
-        const ma=va.match(/(\d+)年(\d+)月第(\d+)周/),mb=vb.match(/(\d+)年(\d+)月第(\d+)周/);
-        if(ma&&mb){const cmp=(ma[1]-mb[1])||(ma[2]-mb[2])||(ma[3]-mb[3]);if(cmp!==0)return cmp*dir;}
-      }
-      va=(va||'').toString().toLowerCase();vb=(vb||'').toString().toLowerCase();
-      const cmp=va.localeCompare(vb,'zh');if(cmp!==0)return cmp*dir;
-    }
-    return 0;
-  });
-}
-
-function updateStats(){
-  document.getElementById('statsText').textContent=`显示 ${filteredItems.length.toLocaleString()} / ${allItems.length.toLocaleString()}`;
-}
-
-function renderActiveFilters(){
-  const el=document.getElementById('activeFilters');let h='';
-  if(searchQuery) h+=`<span class="chip">搜索: ${esc(searchQuery)} <span class="x" onclick="clearSearch()">x</span></span>`;
-  if(showFavOnly) h+=`<span class="chip" style="background:#fef3c7;color:#92400e">仅收藏 <span class="x" onclick="toggleFavFilter()">x</span></span>`;
-  if(activeCats.size<5) activeCats.forEach(c=>h+=`<span class="chip" style="background:${CAT_COLORS[c]};color:#fff">${CAT_NAMES[c]} <span class="x" onclick="toggleCat('${c}')">x</span></span>`);
-  {const wl=document.getElementById('weekDdList');const ck=[...wl.querySelectorAll('input:checked')].length;
-   if(ck>0&&ck<weekOrder.length) h+=`<span class="chip">周次: ${ck}/${weekOrder.length} <span class="x" onclick="clearWeekFilter()">x</span></span>`;}
-  {const yl3=document.getElementById('yearDdList');const yk=[...yl3.querySelectorAll('input:checked')].length;
-   if(yk>0&&yk<yearOrder.length) h+=`<span class="chip">年份: ${yk}/${yearOrder.length} <span class="x" onclick="clearYearFilter()">x</span></span>`;}
-  if(activeSource) h+=`<span class="chip">来源: ${esc(activeSource)} <span class="x" onclick="clearSourceFilter()">x</span></span>`;
-  if(activeExt) h+=`<span class="chip">类型: ${activeExt} <span class="x" onclick="clearExtFilter()">x</span></span>`;
-  el.innerHTML=h; el.classList.toggle('has-chips',h.length>0);
-}
-
-// ======== VIRTUAL TABLE ========
-function renderTable(){
-  const body=document.getElementById('tableBody'),spacer=document.getElementById('tableSpacer'),rows=document.getElementById('tableRows');
-  if(filteredItems.length===0){spacer.style.height='0';rows.style.transform='translateY(0)';rows.innerHTML='<div class="empty-state">无匹配结果，请调整筛选条件</div>';return;}
-  spacer.style.height=filteredItems.length*ROW_H+'px';
-  const top=body.scrollTop,viewH=body.clientHeight;
-  let start=Math.max(0,Math.floor(top/ROW_H)-BUFFER), end=Math.min(filteredItems.length,Math.ceil((top+viewH)/ROW_H)+BUFFER);
-  rows.style.transform=`translateY(${start*ROW_H}px)`;
-  let html='';
-  for(let i=start;i<end;i++){
-    const c=filteredItems[i],wp=c.work_path,sel=selectedIds.has(wp),fav=favoritesSet.has(wp),act=wp===activeDetailPath;
-    const ws=c.week.replace(/^\d+年/,''),ec=c.ext==='.pdf'?'ext-badge':'ext-badge non-pdf';
-    html+=`<div class="table-row${sel?' selected':''}${act?' active-detail':''}" data-wp="${esc(wp)}">
-      <div class="cell"><input type="checkbox" ${sel?'checked':''} onclick="event.stopPropagation();toggleSel('${esc(wp)}')" /></div>
-      <div class="cell week">${esc(ws)}</div>
-      <div class="cell cat"><span class="cat-tag" data-cat="${c.cat_num}">${CAT_NAMES[c.cat_num]}</span></div>
-      <div class="cell source">${esc(c.source||'--')}</div>
-      <div class="cell filename" title="${esc(c.filename)}">${esc(c.filename)}</div>
-      <div class="cell pages">${c.pages||'--'}</div>
-      <div class="cell size">${fmtSize(c.size)}</div>
-      <div class="cell date">${c.date}</div>
-      <div class="cell"><span class="${ec}">${c.ext.replace('.','')}</span></div>
-      <div class="cell actions">
-        <button class="btn-fav${fav?' is-fav':''}" onclick="event.stopPropagation();toggleFav('${esc(wp)}')" title="收藏">${fav?'★':'☆'}</button>
-        <button class="btn-sm btn-open" data-wp="${esc(wp)}" onclick="event.stopPropagation();previewFile(this)">预览</button>
-        <button class="btn-sm btn-extract" data-wp="${esc(wp)}" onclick="event.stopPropagation();extractFile(this)">提取</button>
-        <button class="btn-sm btn-danger" data-wp="${esc(wp)}" onclick="event.stopPropagation();confirmDelete(this)">删除</button>
-      </div>
-    </div>`;
-  }
-  rows.innerHTML=html;
-  rows.querySelectorAll('.table-row').forEach(r=>{
-    r.addEventListener('click',e=>{
-      if(e.target.tagName==='INPUT'||e.target.tagName==='BUTTON') return;
-      showDetail(r.dataset.wp);
-    });
-  });
-  // Sort arrows
-  document.querySelectorAll('#tableHeader .col[data-sort]').forEach(col=>{
-    const arrow=col.querySelector('.arrow');if(!arrow)return;
-    const first=sortCols.find(s=>s.col===col.dataset.sort);
-    arrow.textContent=first?(first.dir==='asc'?' ▲':' ▼'):'';
-  });
-}
-
-let rafId;
-function onScroll(){if(rafId)cancelAnimationFrame(rafId);rafId=requestAnimationFrame(renderTable);}
-
-// ======== ACTIONS ========
-function resolveItem(el){
-  // Accept element (with data-wp) or work_path string.
-  let wp;
-  if(typeof el==='string'){wp=el;}
-  else if(el&&el.dataset){wp=el.dataset.wp;}
-  else{showToast('resolveItem: invalid argument',true);return null;}
-  const c=itemByPath.get(wp);
-  if(!c){showToast('文件记录不存在',true);return null;}
-  return c;
-}
-async function openFile(el){
-  const c=resolveItem(el); if(!c)return;
-  showToast('打开: '+c.filename);
-  try{const r=await fetch('/api/open',{method:'POST',headers:{'Content-Type':'application/json','X-DocLib-Token':token},body:JSON.stringify({work_path:c.work_path})});const d=await r.json();if(d.error)showToast(d.error,true);}catch(e){showToast(e.message,true);}
-}
-async function extractFile(el){
-  const c=resolveItem(el); if(!c)return;
-  showToast('提取: '+c.filename+' → '+getExtractDir());
-  const td=getExtractDir();
-  try{const r=await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json','X-DocLib-Token':token},body:JSON.stringify({work_path:c.work_path,target_dir:td})});const d=await r.json();if(d.error)showToast(d.error,true);else{showToast('已提取: '+d.filename);}}catch(e){showToast(e.message,true);}
-}
-
-function confirmDelete(el){
-  const c=resolveItem(el); if(!c)return;
-  if(confirm('确定删除此文件？\\n\\n'+c.filename+'\\n\\n此操作不可撤销。文件将从磁盘、目录和索引中永久删除。')){
-    deleteFile(c);
-  }
-}
-async function deleteFile(c){
-  showToast('删除: '+c.filename);
-  try{
-    const r=await fetch('/api/delete',{method:'POST',headers:{'Content-Type':'application/json','X-DocLib-Token':token},body:JSON.stringify({work_path:c.work_path})});
-    if(!r.ok){const d=await r.json();showToast(d.detail||'删除失败',true);return;}
-    // Remove from state
-    itemByPath.delete(c.work_path);
-    selectedIds.delete(c.work_path);
-    favoritesSet.delete(c.work_path);
-    allItems=allItems.filter(it=>it.work_path!==c.work_path);
-    // Close detail if open
-    if(activeDetailPath===c.work_path) closeDetail();
-    applyFilters();
-    showToast('已删除: '+c.filename);
-  }catch(e){showToast(e.message,true);}
-}
-
-async function toggleFav(wp){
-  const c=itemByPath.get(wp); if(!c)return;
-  if(favoritesSet.has(wp)){
-    favoritesSet.delete(wp);
-    await fetch(`/api/favorites?work_path=${encodeURIComponent(wp)}`,{method:'DELETE',headers:{'X-DocLib-Token':token}});
-  } else {
-    favoritesSet.add(wp);
-    await fetch('/api/favorites',{method:'POST',headers:{'Content-Type':'application/json','X-DocLib-Token':token},body:JSON.stringify({filename:c.filename,work_path:wp})});
-  }
-  renderTable();
-}
-
-function toggleSel(wp){selectedIds.has(wp)?selectedIds.delete(wp):selectedIds.add(wp);updateSelection();renderTable();}
-function updateSelection(){
-  const bar=document.getElementById('bottomBar'),cnt=selectedIds.size;
-  bar.classList.toggle('visible',cnt>0);
-  document.getElementById('selCount').textContent=cnt>0?`已选 ${cnt} 项`:'';
-  const ts=[...selectedIds].reduce((s,wp)=>{const c=itemByPath.get(wp);return s+(c?c.size:0);},0);
-  document.getElementById('selSize').textContent=cnt>0?`(${fmtSize(ts)})`:'';
-  document.getElementById('batchBtn').disabled=cnt===0;
-  document.getElementById('batchDelBtn').disabled=cnt===0;
-  document.getElementById('selectAll').checked=cnt>0&&cnt===filteredItems.length;
-}
-
-function showDetail(wp){
-  const c=itemByPath.get(wp); if(!c)return;
-  // Remove previous active-detail highlight
-  if(activeDetailPath){
-    const prev=document.querySelector(`.table-row[data-wp="${esc(activeDetailPath)}"]`);
-    if(prev) prev.classList.remove('active-detail');
-  }
-  activeDetailPath=wp;
-  // Add active-detail highlight to new row
-  const row=document.querySelector(`.table-row[data-wp="${esc(wp)}"]`);
-  if(row) row.classList.add('active-detail');
-  const fav=favoritesSet.has(wp);
-  document.getElementById('detailTitle').textContent=c.filename;
-  let h='';
-  [['周次',c.week],['分类',CAT_NAMES[c.cat_num]],['来源',c.source||'--'],['语言',c.lang],['页数',c.pages?c.pages+' 页':'--'],['大小',fmtSize(c.size)],['日期',c.date],['类型',c.ext.replace('.','').toUpperCase()],['路径',c.work_path]].forEach(([l,v])=>{
-    h+=`<div class="field"><div class="label">${l}</div><div class="value">${esc(String(v))}</div></div>`;
-  });
-  h+=`<div class="panel-actions">
-    <button class="btn btn-primary" data-wp="${esc(wp)}" onclick="previewFile(this)">预览</button>
-    <button class="btn btn-secondary" data-wp="${esc(wp)}" onclick="openFile(this)">系统打开</button>
-    <button class="btn btn-secondary" data-wp="${esc(wp)}" onclick="extractFile(this)">提取</button>
-    <button class="btn btn-secondary" onclick="toggleFav('${esc(wp)}');showDetail('${esc(wp)}')">${fav?'取消收藏':'收藏'}</button>
-    <button class="btn btn-danger" data-wp="${esc(wp)}" onclick="confirmDelete(this)">删除</button>
-  </div>`;
-  document.getElementById('detailContent').innerHTML=h;
-  document.getElementById('detailPanel').classList.add('visible');
-  document.getElementById('detailOverlay').classList.add('visible');
-}
-function closeDetail(){
-  if(activeDetailPath){
-    const row=document.querySelector(`.table-row[data-wp="${esc(activeDetailPath)}"]`);
-    if(row) row.classList.remove('active-detail');
-    activeDetailPath=null;
-  }
-  document.getElementById('detailPanel').classList.remove('visible');
-  document.getElementById('detailOverlay').classList.remove('visible');
-}
-
-function previewFile(el){
-  const c=resolveItem(el); if(!c)return;
-  window.open('/api/file?work_path='+encodeURIComponent(c.work_path),'_blank');
-}
-
-// ======== EXTRACT DIR ========
-const EXTRACT_DIR_KEY='doclib_extract_dir';
-let _defaultExtractDir='';
-let _platform='Windows';
-async function initExtractDir(){
-  try{
-    const r=await fetch('/api/config');
-    const cfg=await r.json();
-    _defaultExtractDir=cfg.default_extract_dir||'';
-    _platform=cfg.platform||'Windows';
-  }catch(e){_defaultExtractDir='';}
-}
-function getExtractDir(){
-  let v=localStorage.getItem(EXTRACT_DIR_KEY);
-  if(!v||!v.trim()){
-    v=_defaultExtractDir||'extracted';
-    if(v) localStorage.setItem(EXTRACT_DIR_KEY,v);
-  }
-  return v;
-}
-function saveExtractDir(v){localStorage.setItem(EXTRACT_DIR_KEY,v.trim());}
-function toggleExtractDir(){
-  const row=document.getElementById('extractDirRow');
-  const show=row.style.display==='none';
-  row.style.display=show?'flex':'none';
-  if(show){
-    document.getElementById('extractDirInput').value=getExtractDir();
-    document.getElementById('extractDirInput').focus();
-  }
-}
-function openExtractDir(){
-  const d=getExtractDir();
-  fetch('/api/open-dir',{method:'POST',headers:{'Content-Type':'application/json','X-DocLib-Token':token},body:JSON.stringify({path:d})}).catch(()=>{});
-  showToast('提取目录: '+d);
-}
-document.addEventListener('DOMContentLoaded',()=>{
-  const inp=document.getElementById('extractDirInput');
-  inp.value=getExtractDir();
-  inp.addEventListener('change',()=>saveExtractDir(inp.value));
-  inp.addEventListener('blur',()=>saveExtractDir(inp.value));
-});
-
-// ======== BATCH ========
-function showBatchDialog(){
-  const items=[...selectedIds].map(wp=>itemByPath.get(wp)).filter(Boolean);if(!items.length)return;
-  document.getElementById('batchFileList').innerHTML=items.map(c=>`<div>${esc(c.filename)} <span style="color:var(--text2)">(${fmtSize(c.size)})</span></div>`).join('');
-  const dir=getExtractDir();
-  document.getElementById('batchTargetDir').value=dir;
-  updateBatchActualDir();
-  document.getElementById('batchProgress').style.display='none';
-  document.getElementById('batchStartBtn').disabled=false;
-  document.getElementById('batchDialog').classList.add('visible');
-  document.getElementById('batchTargetDir').addEventListener('input',updateBatchActualDir,{once:true});
-}
-function setBatchDir(v){document.getElementById('batchTargetDir').value=v;updateBatchActualDir();}
-function updateBatchActualDir(){
-  const td=document.getElementById('batchTargetDir').value.trim();
-  const ts=new Date().toISOString().replace(/[-:]/g,'').replace('T','_').slice(0,15);
-  const sep=_platform==='Windows'?'\\':'/';
-document.getElementById('batchActualDir').textContent=td+sep+ts;
-}
-async function startBatchExtract(){
-  const items=[...selectedIds].map(wp=>itemByPath.get(wp)).filter(Boolean),td=document.getElementById('batchTargetDir').value.trim();
-  if(!td){showToast('请输入目标目录',true);return;}
-  document.getElementById('batchStartBtn').disabled=true;
-  document.getElementById('batchProgress').style.display='block';
-  try{
-    const r=await fetch('/api/batch-extract',{method:'POST',headers:{'Content-Type':'application/json','X-DocLib-Token':token},body:JSON.stringify({items:items.map(c=>({work_path:c.work_path})),target_dir:td})});
-    const d=await r.json();if(d.error){showToast(d.error,true);return;}
-    const tid=d.task_id;
-    const poll=async()=>{const pr=await fetch(`/api/batch-progress?task_id=${tid}`);const p=await pr.json();const pct=p.total>0?Math.round(p.done/p.total*100):0;
-      document.getElementById('batchProgressFill').style.width=pct+'%';
-      document.getElementById('batchProgressText').textContent=`${p.done}/${p.total} (${pct}%)`+(p.errors?.length?` | ${p.errors.length} 错误`:'');
-      if(p.status==='done'){showToast(`提取完成! ${p.done} 文件 -> ${p.batch_dir||td}`);closeBatchDialog();}else setTimeout(poll,500);};
-    setTimeout(poll,500);
-  }catch(e){showToast(e.message,true);document.getElementById('batchStartBtn').disabled=false;}
-}
-function closeBatchDialog(){document.getElementById('batchDialog').classList.remove('visible');}
-
-async function batchDelete(){
-  const items=[...selectedIds].map(wp=>itemByPath.get(wp)).filter(Boolean);
-  if(!items.length)return;
-  if(!confirm('确定批量删除 '+items.length+' 个文件？\\n\\n此操作不可撤销。文件将从磁盘、目录和索引中永久删除。')) return;
-  showToast('正在删除 '+items.length+' 个文件...');
-  try{
-    const r=await fetch('/api/batch-delete',{method:'POST',headers:{'Content-Type':'application/json','X-DocLib-Token':token},body:JSON.stringify({items:items.map(c=>({work_path:c.work_path}))})});
-    const d=await r.json();
-    // Remove from state
-    d.deleted.forEach(wp=>{
-      itemByPath.delete(wp);
-      selectedIds.delete(wp);
-      favoritesSet.delete(wp);
-    });
-    allItems=allItems.filter(it=>!d.deleted.includes(it.work_path));
-    if(d.deleted.includes(activeDetailPath)) closeDetail();
-    applyFilters();
-    showToast('已删除 '+d.deleted+' 个, '+d.errors.length+' 个失败');
-  }catch(e){showToast(e.message,true);}
-}
-
-// ======== FAVORITES FILTER ========
-function toggleFavFilter(){
-  showFavOnly=!showFavOnly;
-  document.getElementById('favFilterBtn').classList.toggle('active',showFavOnly);
-  document.getElementById('favFilterBtn').textContent=showFavOnly?'★':'☆';
-  applyFilters();
-}
-
-// ======== UPLOAD ========
-const MAX_UPLOAD_PER_FILE = 8 * 1024 * 1024 * 1024; // 8 GB
-let uploadFiles=[];
-
-function showUploadDialog(){
-  uploadFiles=[];
-  refreshUploadQueue();
-  document.getElementById('uploadFileInput').value='';
-  document.getElementById('uploadProgress').style.display='none';
-  document.getElementById('uploadDialog').classList.add('visible');
-}
-
-function closeUploadDialog(){
-  document.getElementById('uploadDialog').classList.remove('visible');
-}
-
-function handleFileSelect(e){
-  if(e.target.files.length>0) addUploadFiles(e.target.files);
-}
-
-function handleFileDrop(e){
-  e.preventDefault();
-  document.getElementById('uploadDropZone').style.borderColor='var(--border)';
-  if(e.dataTransfer.files.length>0) addUploadFiles(e.dataTransfer.files);
-}
-
-function addUploadFiles(fileList){
-  var added=0, skippedNonZip=0, skippedSize=0, skippedDup=0;
-  for(var i=0;i<fileList.length;i++){
-    var file=fileList[i];
-    if(!file.name.toLowerCase().endsWith('.zip')){ skippedNonZip++; continue; }
-    if(file.size>MAX_UPLOAD_PER_FILE){ skippedSize++; continue; }
-    // Check for duplicate filenames in queue
-    if(uploadFiles.some(function(f){return f.name===file.name;})){ skippedDup++; continue; }
-    uploadFiles.push(file);
-    added++;
-  }
-  var msgs=[];
-  if(added>0) msgs.push('已添加 '+added+' 个文件');
-  if(skippedNonZip>0) msgs.push(skippedNonZip+' 个非 ZIP 文件已跳过');
-  if(skippedSize>0) msgs.push(skippedSize+' 个超过 8 GB 已跳过');
-  if(skippedDup>0) msgs.push(skippedDup+' 个重复文件已跳过');
-  if(msgs.length>0) showToast(msgs.join('，'));
-  refreshUploadQueue();
-}
-
-function removeUploadFile(index){
-  uploadFiles.splice(index,1);
-  refreshUploadQueue();
-}
-
-function refreshUploadQueue(){
-  var listEl=document.getElementById('uploadFileList');
-  var btn=document.getElementById('uploadStartBtn');
-  var dropText=document.getElementById('uploadFileName');
-  if(uploadFiles.length===0){
-    listEl.style.display='none';
-    listEl.innerHTML='';
-    btn.disabled=true;
-    dropText.innerHTML='拖拽一个或多个 ZIP 文件到此处或点击选择';
-  } else {
-    var totalSize=0;
-    var html='';
-    for(var i=0;i<uploadFiles.length;i++){
-      totalSize+=uploadFiles[i].size;
-      html+='<div style="font-size:11px;padding:4px 8px;margin:2px 0;background:var(--bg2);border-radius:4px;display:flex;justify-content:space-between;align-items:center">'+
-        '<span><b>'+esc(uploadFiles[i].name)+'</b> <span style="color:var(--text2)">'+fmtSize(uploadFiles[i].size)+'</span></span>'+
-        '<a style="color:var(--accent);cursor:pointer;font-weight:bold;font-size:14px" onclick="removeUploadFile('+i+')">&times;</a>'+
-        '</div>';
-    }
-    listEl.innerHTML=html;
-    listEl.style.display='block';
-    btn.disabled=false;
-    dropText.innerHTML='<b>'+uploadFiles.length+'</b> 个文件 &middot; 共 '+fmtSize(totalSize);
-  }
-}
-
-async function startUpload(){
-  if(uploadFiles.length===0) return;
-  var btn=document.getElementById('uploadStartBtn');
-  btn.disabled=true;
-  var progressEl=document.getElementById('uploadProgress');
-  var fillEl=document.getElementById('uploadProgressFill');
-  var textEl=document.getElementById('uploadProgressText');
-  progressEl.style.display='block';
-  fillEl.style.width='0%';
-  textEl.textContent='准备上传 '+uploadFiles.length+' 个文件...';
-
-  var formData=new FormData();
-  for(var i=0;i<uploadFiles.length;i++){
-    formData.append('files', uploadFiles[i]);
-  }
-
-  var xhr=new XMLHttpRequest();
-  xhr.open('POST', '/api/upload');
-  xhr.setRequestHeader('X-DocLib-Token', token);
-
-  xhr.upload.onprogress=function(e){
-    if(e.lengthComputable){
-      var pct=Math.round(e.loaded/e.total*100);
-      fillEl.style.width=pct+'%';
-      textEl.textContent='上传中 '+fmtSize(e.loaded)+' / '+fmtSize(e.total)+' ('+pct+'%)';
-    }
-  };
-
-  xhr.onload=function(){
-    try{
-      var d=JSON.parse(xhr.responseText);
-      var okCount=0, errCount=0, totalNew=0;
-      if(d.results){
-        d.results.forEach(function(r){
-          if(r.status==='ok'){ okCount++; totalNew+=r.new_entries||0; }
-          else errCount++;
-        });
-      }
-      fillEl.style.width='100%';
-      var msg;
-      if(errCount===0){
-        msg='全部成功: 共添加 '+totalNew+' 个条目 ('+okCount+' 个归档文件)';
-      } else if(okCount>0){
-        msg='部分成功: '+okCount+' 个完成, '+errCount+' 个失败';
-        d.results.forEach(function(r){
-          if(r.status==='error') showToast(r.error||'上传失败', true);
-        });
-      } else {
-        msg='全部失败';
-        if(d.results && d.results[0]) showToast(d.results[0].error||'上传失败', true);
-      }
-      textEl.textContent=msg;
-      showToast(msg, errCount>0);
-      setTimeout(function(){ init(); closeUploadDialog(); }, 2000);
-    } catch(ex){
-      showToast('解析响应失败', true);
-      progressEl.style.display='none';
-      btn.disabled=false;
-    }
-  };
-
-  xhr.onerror=function(){
-    showToast('上传失败: 网络错误', true);
-    progressEl.style.display='none';
-    btn.disabled=false;
-  };
-
-  xhr.send(formData);
-}
-
-// ======== HISTORY ========
-async function showHistory(){
-  try{
-    const r=await fetch('/api/history?limit=50');const data=await r.json();
-    let h='';
-    if(data.length===0) h='<div style="color:var(--text2);font-size:13px;padding:20px">暂无浏览记录</div>';
-    else data.forEach(item=>{
-      h+=`<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;cursor:pointer" data-wp="${esc(item.work_path)}" class="history-item">
-        <div style="font-weight:500">${esc(item.filename)}</div>
-        <div style="color:var(--text2);font-size:10px">${item.opened_at||''}</div>
-      </div>`;
-    });
-    document.getElementById('historyContent').innerHTML=h;
-    document.getElementById('historyContent').querySelectorAll('.history-item').forEach(el=>{
-      el.addEventListener('click',()=>{
-        closeHistory();
-        findAndShowDetail(el.dataset.wp);
-      });
-    });
-    document.getElementById('historyPanel').classList.add('visible');
-    document.getElementById('historyOverlay').classList.add('visible');
-  }catch(e){showToast(e.message,true);}
-}
-function closeHistory(){document.getElementById('historyPanel').classList.remove('visible');document.getElementById('historyOverlay').classList.remove('visible');}
-function findAndShowDetail(work_path){
-  if(itemByPath.has(work_path)) showDetail(work_path);
-}
-
-
-// ======== STATS ========
-async function showStats(){
-  try{
-    const [srcR,wkR]=await Promise.all([fetch('/api/stats/sources'),fetch('/api/stats/weekly')]);
-    const srcData=await srcR.json(),wkData=await wkR.json();
-    let h='';
-    // Top sources
-    if(srcData.sources?.length){
-      h+='<div class="stats-chart"><h3>报告数量 Top 20 来源</h3>';
-      const top20=srcData.sources.slice(0,20);
-      const maxVal=top20[0]?.count||1;
-      top20.forEach(s=>{
-        const pct=Math.round(s.count/maxVal*100);
-        const color=CAT_COLORS[s.cat_num]||'var(--accent)';
-        h+=`<div class="bar-row"><span class="bar-label" title="${esc(s.source)}">${esc(s.source)}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div><span class="bar-value">${s.count}</span></div></div>`;
-      });
-      h+='</div>';
-    }
-    // Weekly trend
-    if(wkData.weekly?.length){
-      h+='<div class="stats-chart"><h3>每周报告数量趋势</h3>';
-      // Aggregate by week
-      const weekTotals={};
-      wkData.weekly.forEach(w=>{weekTotals[w.week]=(weekTotals[w.week]||0)+w.count;});
-      const maxW=Math.max(...Object.values(weekTotals),1);
-      Object.entries(weekTotals).forEach(([week,cnt])=>{
-        const pct=Math.round(cnt/maxW*100);
-        h+=`<div class="bar-row"><span class="bar-label">${week.replace(/^\d+年/,'')}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:var(--accent)"></div><span class="bar-value">${cnt}</span></div></div>`;
-      });
-      h+='</div>';
-    }
-    document.getElementById('statsContent').innerHTML=h;
-    document.getElementById('statsPanel').classList.add('visible');
-    document.getElementById('statsOverlay').classList.add('visible');
-  }catch(e){showToast(e.message,true);}
-}
-function closeStats(){document.getElementById('statsPanel').classList.remove('visible');document.getElementById('statsOverlay').classList.remove('visible');}
-
-// ======== DARK MODE ========
-function toggleDarkMode(){
-  const isDark=document.documentElement.dataset.theme==='dark';
-  document.documentElement.dataset.theme=isDark?'light':'dark';
-  document.getElementById('darkModeBtn').classList.toggle('active',!isDark);
-  localStorage.setItem('doclib-theme',isDark?'light':'dark');
-}
-
-// ======== FILTER HANDLERS ========
-function toggleCat(cat){activeCats.has(cat)?activeCats.delete(cat):activeCats.add(cat);syncCatBtns();updateSourceFilter();applyFilters();}
-function syncCatBtns(){document.querySelectorAll('.cat-btn').forEach(b=>b.classList.toggle('active',activeCats.has(b.dataset.cat)));}
-function clearSearch(){searchQuery='';document.getElementById('searchInput').value='';applyFilters();}
-function clearSourceFilter(){activeSource='';document.getElementById('sourceSel').value='';applyFilters();}
-function clearExtFilter(){activeExt='';document.getElementById('extSel').value='';applyFilters();}
-
-// ======== UTILS ========
-function fmtSize(b){if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB';}
-function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML.replace(/"/g,'&quot;');}
-function showToast(msg,err){
-  const c=document.getElementById('toastContainer'),el=document.createElement('div');
-  el.className='toast'+(err?' error':'');el.textContent=msg;c.appendChild(el);
-  setTimeout(()=>{el.style.animation='toast-out .2s ease forwards';setTimeout(()=>el.remove(),300);},2500);
-}
-
 // ======== EVENT BINDINGS ========
 document.addEventListener('DOMContentLoaded',()=>{
   init();
-  document.getElementById('tableBody').addEventListener('scroll',onScroll);
 
-  // Search with 300ms debounce
-  let st;document.getElementById('searchInput').addEventListener('input',e=>{
-    clearTimeout(st);st=setTimeout(()=>{searchQuery=e.target.value.trim();applyFilters();},300);
+  // Table scroll with header horizontal sync
+  const tableBody=document.getElementById('tableBody');
+  const tableHeader=document.getElementById('tableHeader');
+  tableBody.addEventListener('scroll',()=>{
+    tableHeader.scrollLeft=tableBody.scrollLeft;
+    onScroll();
   });
 
-  // Category buttons
-  document.querySelectorAll('.cat-btn').forEach(b=>b.addEventListener('click',()=>toggleCat(b.dataset.cat)));
+  // Search with 300ms debounce
+  let st;
+  document.getElementById('searchInput').addEventListener('input',e=>{
+    clearTimeout(st);
+    st=setTimeout(()=>{searchQuery=e.target.value.trim();applyFilters();},300);
+  });
 
-  // Week dropdown
-  document.getElementById('weekDdBtn').addEventListener('click',()=>document.getElementById('weekDdList').classList.toggle('open'));
-  document.addEventListener('click',e=>{if(!e.target.closest('.week-dd'))document.getElementById('weekDdList').classList.remove('open');});
-  // Year dropdown
-  document.getElementById('yearDdBtn').addEventListener('click',()=>document.getElementById('yearDdList').classList.toggle('open'));
-  document.addEventListener('click',e=>{if(!e.target.closest('#yearDd'))document.getElementById('yearDdList').classList.remove('open');});
-
-  // Source & Ext
+  // Source & Ext changes
   document.getElementById('sourceSel').addEventListener('change',e=>{activeSource=e.target.value;applyFilters();});
-  document.getElementById('extSel').addEventListener('change',e=>{activeExt=e.target.value;applyFilters();});
+  document.getElementById('extNav').addEventListener('change',e=>{activeExt=e.target.value;applyFilters();});
 
-  // Multi-column sort: click = primary, Shift+click = add secondary
+  // Multi-column sort
   document.querySelectorAll('#tableHeader .col[data-sort]').forEach(col=>{
     col.addEventListener('click',e=>{
       const key=col.dataset.sort, shift=e.shiftKey;
       if(shift){
-        // Add/toggle secondary sort
         const existing=sortCols.findIndex(s=>s.col===key);
         if(existing>=0){sortCols[existing].dir=sortCols[existing].dir==='asc'?'desc':'asc';}
         else{sortCols.push({col:key,dir:key==='date'||key==='size'?'desc':'asc'});}
       } else {
-        // Single column sort
         const existing=sortCols.find(s=>s.col===key);
         if(existing){sortCols=[{col:key,dir:existing.dir==='asc'?'desc':'asc'}];}
         else{sortCols=[{col:key,dir:key==='date'||key==='size'?'desc':'asc'}];}
@@ -1102,18 +299,18 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   // Select all
   document.getElementById('selectAll').addEventListener('change',e=>{
-    if(e.target.checked)filteredItems.forEach(c=>selectedIds.add(c.work_path));else selectedIds.clear();
-    updateSelection();renderTable();
+    if(e.target.checked) filteredItems.forEach(c=>selectedIds.add(c.work_path));
+    else selectedIds.clear();
+    updateSelection(); renderTable();
   });
-  document.getElementById('clearSelBtn').addEventListener('click',()=>{selectedIds.clear();updateSelection();renderTable();});
 
-  // Batch
+  // Batch buttons
   document.getElementById('batchBtn').addEventListener('click',showBatchDialog);
-  document.getElementById('batchDelBtn').addEventListener('click',batchDelete);
+  document.getElementById('batchDelBtn').addEventListener('click',batchRecycle);
   document.getElementById('batchStartBtn').addEventListener('click',startBatchExtract);
   document.getElementById('batchCancelBtn').addEventListener('click',closeBatchDialog);
 
-  // Panels
+  // Panel close
   document.getElementById('detailClose').addEventListener('click',closeDetail);
   document.getElementById('detailOverlay').addEventListener('click',closeDetail);
   document.getElementById('statsClose').addEventListener('click',closeStats);
@@ -1126,43 +323,24 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('uploadCancelBtn').addEventListener('click', closeUploadDialog);
   document.getElementById('uploadDialog').addEventListener('click', function(e){ if(e.target===this) closeUploadDialog(); });
 
+  // Extract dir input
+  const extInput=document.getElementById('extractDirInput');
+  extInput.value=getExtractDir();
+  extInput.addEventListener('change',()=>saveExtractDir(extInput.value));
+  extInput.addEventListener('blur',()=>saveExtractDir(extInput.value));
+
   // Keyboard
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDetail();closeStats();closeHistory();closeBatchDialog();closeUploadDialog();}});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape') closeAllPanels();});
 
   // Column resize
   initColumnResize();
-  // Window resize
   window.addEventListener('resize',()=>renderTable());
 });
 
-function initColumnResize(){
-  const header=document.getElementById('tableHeader');
-  const cols=header.querySelectorAll('.col');
-  let resizing=null, startX=0, startW=0;
-  cols.forEach((col,i)=>{
-    if(i===cols.length-1) return; // Last column (actions) not resizable
-    const r=document.createElement('div'); r.className='col-resizer';
-    r.addEventListener('mousedown',e=>{
-      e.preventDefault(); e.stopPropagation();
-      resizing={col, i, startX:e.clientX, startW:col.getBoundingClientRect().width};
-      r.classList.add('active');
-      document.body.style.cursor='col-resize'; document.body.style.userSelect='none';
-    });
-    col.appendChild(r);
-  });
-  document.addEventListener('mousemove',e=>{
-    if(!resizing) return;
-    const diff=e.clientX-resizing.startX;
-    const newW=Math.max(30, resizing.startW+diff);
-    const template=getComputedStyle(header).gridTemplateColumns.split(' ');
-    template[resizing.i]=newW+'px';
-    header.style.gridTemplateColumns=template.join(' ');
-  });
-  document.addEventListener('mouseup',()=>{
-    if(resizing) document.body.style.cursor=''; document.body.style.userSelect='';
-    resizing=null;
-    document.querySelectorAll('.col-resizer.active').forEach(r=>r.classList.remove('active'));
-  });
+function clearSel(){selectedIds.clear();updateSelection();renderTable();}
+
+function showRecycleStatus(){
+  showToast('回收站位于: work/.recycle_bin/ （可手动恢复文件）');
 }
 </script>
 </body>

@@ -13,7 +13,7 @@ import time
 from typing import List
 
 from fastapi import APIRouter, Depends, File, HTTPException, Header, Query, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from app.config import APP_TOKEN, BASE_DIR, ARCHIVES_DIR, CATALOG_PATH, HTML_PATH, MAX_UPLOAD_SIZE, WORK_DIR, open_file_external
 from app.models import (
@@ -132,27 +132,96 @@ async def open_dir(req: OpenDirRequest, _token: str = Depends(verify_token)):
 async def serve_file(work_path: str = Query(...)):
     try:
         path = zip_service.serve_file(work_path)
-        return FileResponse(path)
+        return FileResponse(path, content_disposition_type="inline")
     except PermissionError:
         raise HTTPException(403, "Access denied")
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
 
 
+@router.get("/preview")
+async def preview_file(work_path: str = Query(...)):
+    """Return an HTML preview page that embeds the file inline (no download)."""
+    try:
+        path = zip_service.serve_file(work_path)
+    except PermissionError:
+        raise HTTPException(403, "Access denied")
+    except FileNotFoundError:
+        raise HTTPException(404, "File not found")
+
+    filename = os.path.basename(path)
+    ext = os.path.splitext(filename)[1].lower()
+    file_url = f"/api/file?work_path={work_path}"
+
+    # Determine content rendering
+    embed = ""
+    if ext == ".pdf":
+        embed = f'<embed src="{file_url}" type="application/pdf" style="width:100%;height:100%;border:none;min-height:100vh">'
+    elif ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"):
+        embed = f'<div style="display:flex;align-items:center;justify-content:center;height:100%"><img src="{file_url}" style="max-width:100%;max-height:100vh;object-fit:contain"></div>'
+    elif ext in (".mp4", ".webm", ".ogg"):
+        embed = f'<video controls style="max-width:100%;max-height:90vh;margin:auto;display:block"><source src="{file_url}"></video>'
+    elif ext in (".mp3", ".wav", ".flac"):
+        embed = f'<audio controls style="width:100%;margin-top:40px"><source src="{file_url}"></audio><p style="text-align:center;margin-top:20px;color:var(--text2)">{filename}</p>'
+    elif ext in (".txt", ".csv", ".md", ".py", ".js", ".html", ".css", ".json", ".xml", ".log"):
+        embed = f'<iframe src="{file_url}" style="width:100%;height:100%;border:none;min-height:100vh"></iframe>'
+    else:
+        embed = f"""<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:80vh;gap:16px">
+        <div style="font-size:64px">&#128196;</div>
+        <div style="font-size:16px;font-weight:500">{filename}</div>
+        <div style="color:var(--text2)">浏览器无法直接预览此格式</div>
+        <a href="{file_url}" download style="display:inline-block;padding:8px 20px;background:#0078d4;color:#fff;border-radius:4px;text-decoration:none;font-size:14px">下载文件</a>
+        </div>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{filename} — Doc_Lib 预览</title>
+<style>
+  *{{margin:0;padding:0;box-sizing:border-box}}
+  body{{font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:#e8e8e8;height:100vh;display:flex;flex-direction:column}}
+  .preview-header{{background:#252423;color:#fff;padding:6px 16px;display:flex;align-items:center;gap:12px;font-size:13px;flex-shrink:0;height:36px}}
+  .preview-header a{{color:#fff;text-decoration:none;cursor:pointer;font-size:13px}}
+  .preview-header a:hover{{text-decoration:underline}}
+  .preview-header .sep{{color:#666;margin:0 4px}}
+  .preview-header .fname{{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}}
+  .preview-body{{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;background:#525659}}
+  .preview-body:has(embed){{display:block}} .preview-body:has(iframe){{display:block}}
+  [data-theme="light"] .preview-body{{background:#e8e8e8}}
+</style>
+</head>
+<body>
+<div class="preview-header">
+  <a href="/">&#8592; 返回目录</a>
+  <span class="sep">|</span>
+  <span>Doc_Lib 预览</span>
+  <span class="sep">|</span>
+  <span class="fname">{filename}</span>
+  <a href="{file_url}" download style="font-size:12px;color:#ccc">&#128229; 下载</a>
+</div>
+<div class="preview-body">
+  {embed}
+</div>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
 @router.post("/delete")
 async def delete_file(req: OpenRequest, _token: str = Depends(verify_token)):
-    """Delete a file from work/, catalog, FTS index, favorites, and history."""
+    """Move a file to recycle bin and remove from catalog, FTS, favorites, and history."""
     try:
-        path = zip_service.resolve_work_path(req.work_path)
-        if not os.path.isfile(path):
-            raise HTTPException(404, f"File not found: {req.work_path}")
-        os.remove(path)
+        recycled_path = zip_service.move_to_recycle_bin(req.work_path)
         catalog_service.remove_from_catalog(req.work_path)
         index_service.remove_from_index(req.work_path)
         index_service.remove_favorite(req.work_path)
         index_service.remove_history_by_wp(req.work_path)
         index_service.invalidate_cache()
-        return {"status": "deleted", "work_path": req.work_path, "filename": os.path.basename(path)}
+        return {"status": "recycled", "work_path": req.work_path, "recycled_to": recycled_path}
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
     except PermissionError as e:
         raise HTTPException(403, str(e))
 
@@ -191,28 +260,26 @@ async def batch_progress(task_id: str = Query(...)):
 
 @router.post("/batch-delete")
 async def batch_delete(req: BatchExtractRequest, _token: str = Depends(verify_token)):
-    """Delete multiple files from work/, catalog, FTS, favorites, and history."""
+    """Move multiple files to recycle bin and remove from catalog, FTS, favorites, and history."""
     if not req.items:
         raise HTTPException(400, "No items specified")
-    deleted = []
+    recycled = []
     errors = []
     for item in req.items:
         wp = item.work_path
         try:
-            path = zip_service.resolve_work_path(wp)
-            if os.path.isfile(path):
-                os.remove(path)
+            zip_service.move_to_recycle_bin(wp)
             catalog_service.remove_from_catalog(wp)
             index_service.remove_from_index(wp)
             index_service.remove_favorite(wp)
             index_service.remove_history_by_wp(wp)
-            deleted.append(wp)
+            recycled.append(wp)
         except PermissionError:
             errors.append(f"{wp}: Access denied")
         except FileNotFoundError:
             errors.append(f"{wp}: File not found")
     index_service.invalidate_cache()
-    return {"status": "ok", "deleted": len(deleted), "errors": errors}
+    return {"status": "ok", "recycled": len(recycled), "errors": errors}
 
 
 # ============ Full-Text Search ============

@@ -10,8 +10,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
-from app.config import DEFAULT_PORT, DB_PATH, HTML_PATH
+from app.config import DEFAULT_PORT, DB_PATH, HTML_PATH, STATIC_DIR
 from app.routes.api import router
 from app.services import index_service, zip_service
 
@@ -62,6 +63,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 app.include_router(router)
+
+if os.path.isdir(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/", include_in_schema=False)
