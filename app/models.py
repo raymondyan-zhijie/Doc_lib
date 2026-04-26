@@ -29,3 +29,16 @@ class FavoriteItem(BaseModel):
     filename: str
     work_path: str
 
+
+class OpenRequest(BaseModel):
+    work_path: str
+
+
+class ExtractRequest(BaseModel):
+    work_path: str
+    target_dir: str = ""
+
+
+class OpenDirRequest(BaseModel):
+    path: str
+

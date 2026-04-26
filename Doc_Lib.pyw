@@ -25,7 +25,7 @@ if PROJECT_DIR not in sys.path:
 
 import uvicorn
 from app.main import app
-from app import main as app_mod
+from app import config as app_config
 from app.config import DEFAULT_PORT
 
 LOG_PATH = os.path.join(PROJECT_DIR, "launcher.log")
@@ -123,7 +123,7 @@ if _HAS_TK:
             try:
                 config = uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning")
                 server = uvicorn.Server(config)
-                app_mod._uvicorn_server = server
+                app_config._uvicorn_server = server
                 self.server_started.set()
                 server.run()
                 if self.root:
@@ -172,11 +172,9 @@ if _HAS_TK:
                 self.stop_btn.config(state=tk.DISABLED)
                 self.footer.config(text="Shutting down...")
                 self.root.update()
-                server = getattr(app_mod, '_uvicorn_server', None)
+                server = getattr(app_config, '_uvicorn_server', None)
                 if server:
                     server.should_exit = True
-                else:
-                    os._exit(0)
                 self.root.after(800, self.root.destroy)
 
         def run(self):

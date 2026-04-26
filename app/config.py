@@ -1,5 +1,6 @@
 import os
 import platform
+import secrets
 import shutil
 import subprocess
 from pathlib import Path
@@ -69,3 +70,8 @@ def get_7z():
     if _SEVEN_ZIP is None:
         _SEVEN_ZIP = find_7z()
     return _SEVEN_ZIP
+
+
+# CSRF token — generated once at import time, valid for the server lifetime
+APP_TOKEN = secrets.token_urlsafe(32)
+_uvicorn_server = None

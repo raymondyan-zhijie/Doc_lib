@@ -17,11 +17,11 @@ def scan_work_week(week_label: str) -> int:
     if not os.path.isdir(week_dir):
         return 0
 
-    if not os.path.exists(CATALOG_PATH):
-        return 0
-
-    with open(CATALOG_PATH, "r", encoding="utf-8") as f:
-        existing = json.load(f)
+    if os.path.exists(CATALOG_PATH):
+        with open(CATALOG_PATH, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+    else:
+        existing = []
 
     existing_keys = {item["work_path"].replace("\\", "/") for item in existing}
     new_items = []

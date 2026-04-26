@@ -12,18 +12,28 @@ import threading
 import time
 from typing import List
 
-from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Header, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 
-from app.config import BASE_DIR, ARCHIVES_DIR, CATALOG_PATH, HTML_PATH, MAX_UPLOAD_SIZE, open_file_external
+from app.config import APP_TOKEN, BASE_DIR, ARCHIVES_DIR, CATALOG_PATH, HTML_PATH, MAX_UPLOAD_SIZE, WORK_DIR, open_file_external
 from app.models import (
     BatchExtractRequest,
+    ExtractRequest,
     FavoriteItem,
+    OpenDirRequest,
+    OpenRequest,
 )
 from app.services import index_service, zip_service
 from app.services import catalog_service
 
 router = APIRouter(prefix="/api")
+
+
+def verify_token(x_doclib_token: str = Header(None)):
+    """Validate CSRF token for side-effect endpoints."""
+    if x_doclib_token != APP_TOKEN:
+        raise HTTPException(403, "Invalid token")
+    return x_doclib_token
 
 
 # ============ Static ============
@@ -48,15 +58,23 @@ async def get_catalog():
                     headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
+@router.post("/catalog/update")
+async def update_catalog(week_label: str = Query(..., description="e.g. 2026年4月第4周"), _token: str = Depends(verify_token)):
+    """Scan work/{week_label}/ and add new entries to catalog, then rebuild FTS index."""
+    count = catalog_service.scan_work_week(week_label)
+    index_service.build_full_index()
+    return {"status": "ok", "new_entries": count}
+
+
 # ============ Open & Extract ============
 
-@router.get("/open")
-async def open_file(work_path: str = Query(...)):
+@router.post("/open")
+async def open_file(req: OpenRequest, _token: str = Depends(verify_token)):
     try:
-        result = zip_service.open_file(work_path)
+        result = zip_service.open_file(req.work_path)
         index_service.add_history(
-            filename=os.path.basename(work_path),
-            work_path=work_path,
+            filename=os.path.basename(req.work_path),
+            work_path=req.work_path,
         )
         return result
     except FileNotFoundError as e:
@@ -65,42 +83,39 @@ async def open_file(work_path: str = Query(...)):
         raise HTTPException(403, str(e))
 
 
-@router.get("/extract")
-async def extract_file(work_path: str = Query(...), target_dir: str = Query("")):
+@router.post("/extract")
+async def extract_file(req: ExtractRequest, _token: str = Depends(verify_token)):
     try:
-        td = target_dir.strip() if target_dir else ""
-        if td:
-            try:
-                zip_service._validate_path(os.path.abspath(td), BASE_DIR)
-            except PermissionError:
-                raise HTTPException(403, "Access denied: target directory outside allowed path")
-        return zip_service.extract_file(work_path, td if td else None)
+        return zip_service.extract_file(req.work_path, req.target_dir or None)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
 
 
 @router.get("/config")
 async def get_config():
-    """Return server-side config (paths, platform info)."""
+    """Return server-side config (paths, platform info, CSRF token)."""
     return {
         "base_dir": BASE_DIR,
         "default_extract_dir": os.path.join(BASE_DIR, "extracted"),
         "platform": platform.system(),
+        "token": APP_TOKEN,
     }
 
 
-@router.get("/open-dir")
-async def open_dir(path: str = Query(...)):
+@router.post("/open-dir")
+async def open_dir(req: OpenDirRequest, _token: str = Depends(verify_token)):
     """Open a directory in the system file explorer. Creates it if needed."""
     try:
-        safe_path = zip_service._validate_path(os.path.abspath(path), BASE_DIR)
+        safe_path = zip_service._validate_path(os.path.abspath(req.path), BASE_DIR)
     except PermissionError:
         raise HTTPException(403, "Access denied: path outside allowed directory")
     os.makedirs(safe_path, exist_ok=True)
     try:
         open_file_external(safe_path)
         return {"status": "opened", "path": safe_path}
-    except Exception as e:
+    except Exception:
         raise HTTPException(500, "Failed to open directory")
 
 
@@ -118,7 +133,7 @@ async def serve_file(work_path: str = Query(...)):
 # ============ Batch ============
 
 @router.post("/batch-extract")
-async def batch_extract(req: BatchExtractRequest):
+async def batch_extract(req: BatchExtractRequest, _token: str = Depends(verify_token)):
     if not req.items:
         raise HTTPException(400, "No items specified")
     if not req.target_dir:
@@ -156,7 +171,7 @@ async def fulltext_search(q: str = Query(...), limit: int = Query(50)):
 
 
 @router.post("/rebuild-index")
-async def rebuild_index():
+async def rebuild_index(_token: str = Depends(verify_token)):
     count = index_service.build_full_index()
     return {"status": "ok", "indexed": count}
 
@@ -169,13 +184,13 @@ async def get_favorites():
 
 
 @router.post("/favorites")
-async def add_favorite(item: FavoriteItem):
+async def add_favorite(item: FavoriteItem, _token: str = Depends(verify_token)):
     index_service.add_favorite(item.filename, item.work_path)
     return {"status": "ok"}
 
 
 @router.delete("/favorites")
-async def remove_favorite(work_path: str = Query(...)):
+async def remove_favorite(work_path: str = Query(...), _token: str = Depends(verify_token)):
     index_service.remove_favorite(work_path)
     return {"status": "ok"}
 
@@ -210,6 +225,7 @@ async def weekly_stats():
 async def upload_zip(
     request: Request,
     files: List[UploadFile] = File(...),
+    _token: str = Depends(verify_token),
 ):
     """Upload one or more weekly ZIP archives: save to archives/, extract to work/, update catalog."""
     if not files:
@@ -286,6 +302,12 @@ async def _upload_one_zip(file: UploadFile) -> dict:
     try:
         file_count = zip_service.extract_archive_to_work(zip_filename, week_label)
     except Exception as e:
+        # Clean up partially extracted files and the saved ZIP
+        target_dir = os.path.join(WORK_DIR, week_label)
+        if os.path.isdir(target_dir):
+            shutil.rmtree(target_dir, ignore_errors=True)
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
         return {"filename": file.filename, "status": "error", "error": f"Extraction failed: {e}"}
 
     # Scan new entries (FTS rebuild happens once after all files)
@@ -304,17 +326,16 @@ async def _upload_one_zip(file: UploadFile) -> dict:
 # ============ Shutdown ============
 
 @router.post("/shutdown")
-async def shutdown_server():
+async def shutdown_server(_token: str = Depends(verify_token)):
     """Gracefully shut down the server."""
 
     def _shutdown():
         time.sleep(0.3)
-        from app import main
-        server = getattr(main, '_uvicorn_server', None)
+        from app import config
+        server = getattr(config, '_uvicorn_server', None)
         if server:
             server.should_exit = True
-        else:
-            os._exit(0)
+        # If no server reference (shouldn't happen), uvicorn will exit on its own
 
     threading.Thread(target=_shutdown, daemon=True).start()
     return {"status": "shutting_down"}

@@ -54,14 +54,15 @@ API docs at `http://localhost:8765/docs`. Requires 7-Zip (auto-detected).
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `GET /api/catalog` | GET | File catalog data (JSON, no-cache) |
-| `GET /api/open?work_path=` | GET | Open file with system default app |
-| `GET /api/extract?work_path=&target_dir=` | GET | Copy file to target directory (validated within BASE_DIR; auto-rename to avoid overwrite) |
+| `POST /api/catalog/update?week_label=` | POST | Scan work/{week}/ and update catalog |
+| `POST /api/open` | POST | Open file with system default app (body: `{work_path}`) |
+| `POST /api/extract` | POST | Copy file to target directory (body: `{work_path, target_dir}`; validated within BASE_DIR) |
 | `GET /api/file?work_path=` | GET | Serve file directly (browser preview) |
 | `POST /api/batch-extract` | POST | Batch copy to target directory (target_dir validated) |
 | `GET /api/batch-progress?task_id=` | GET | Batch progress |
-| `GET /api/open-dir?path=` | GET | Open directory in file explorer (validated within BASE_DIR) |
-| `GET /api/config` | GET | Server config (extract_dir, platform) |
-| `GET /api/search?q=&limit=` | GET | Full-text search (FTS5, work_path stable key) |
+| `POST /api/open-dir` | POST | Open directory in file explorer (body: `{path}`; validated within BASE_DIR) |
+| `GET /api/config` | GET | Server config (extract_dir, platform, CSRF token) |
+| `GET /api/search?q=&limit=` | GET | Metadata search (FTS5, work_path stable key) |
 | `POST /api/rebuild-index` | POST | Rebuild FTS5 index from catalog (transaction-wrapped) |
 | `GET /api/favorites` | GET | Get all favorites |
 | `POST /api/favorites` | POST | Add favorite (work_path UNIQUE) |

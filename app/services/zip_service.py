@@ -57,6 +57,8 @@ def extract_file(work_path: str, target_dir: str = None):
     """Copy a file from work/ to a target directory. If no target, use .tmp/."""
     if target_dir is None:
         target_dir = TMP_DIR
+    else:
+        target_dir = _validate_path(os.path.abspath(target_dir), BASE_DIR)
     os.makedirs(target_dir, exist_ok=True)
     src = resolve_work_path(work_path)
     if not os.path.isfile(src):

@@ -1,6 +1,6 @@
 # Doc_Lib 文档目录浏览器
 
-本地文档目录浏览与提取工具，用于浏览、筛选、全文搜索、收藏和批量提取研究报告。
+本地文档目录浏览与提取工具，用于浏览、筛选、目录搜索、收藏和批量提取研究报告。
 
 ## 架构
 
@@ -67,7 +67,7 @@ requirements.txt        ← Python 依赖（锁定版本）
 - **虚拟滚动表格**：16,000+ 文件流畅滚动，DOM 节点复用
 - **多维度筛选**：周次（下拉多选）、分类（彩色标签）、来源机构、文件类型
 - **文件名搜索**：300ms 防抖实时前端过滤
-- **全文搜索**：SQLite FTS5，索引 filename / category / source / week / work_path
+- **目录搜索**：SQLite FTS5，索引 filename / category / source / week / work_path
 - **列排序**：点击排序，Shift+点击多列联合排序
 - **收藏筛选**：一键切换仅看收藏
 
@@ -132,14 +132,15 @@ Doc_Lib/
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `GET /api/catalog` | GET | 目录数据（JSON，no-cache） |
-| `GET /api/open?work_path=` | GET | 用系统默认程序打开文件 |
-| `GET /api/extract?work_path=&target_dir=` | GET | 复制文件到指定目录（target_dir 限制在 BASE_DIR 内） |
+| `POST /api/catalog/update?week_label=` | POST | 扫描 work/{week}/ 更新目录并重建索引 |
+| `POST /api/open` | POST | 用系统默认程序打开文件（body: `{work_path}`） |
+| `POST /api/extract` | POST | 复制文件到指定目录（body: `{work_path, target_dir}`，target_dir 限制在 BASE_DIR 内） |
 | `GET /api/file?work_path=` | GET | 直接提供文件（浏览器预览） |
 | `POST /api/batch-extract` | POST | 批量复制文件到指定目录，返回 task_id 轮询进度 |
 | `GET /api/batch-progress?task_id=` | GET | 批量进度查询 |
-| `GET /api/open-dir?path=` | GET | 在文件管理器中打开目录（限制在 BASE_DIR 内） |
-| `GET /api/config` | GET | 服务端配置（extract_dir, platform） |
-| `GET /api/search?q=&limit=` | GET | 全文搜索（FTS5 work_path 稳定键，O(1) 字典查找） |
+| `POST /api/open-dir` | POST | 在文件管理器中打开目录（body: `{path}`，限制在 BASE_DIR 内） |
+| `GET /api/config` | GET | 服务端配置（extract_dir, platform, CSRF token） |
+| `GET /api/search?q=&limit=` | GET | 目录搜索（FTS5 work_path 稳定键，O(1) 字典查找） |
 | `POST /api/rebuild-index` | POST | 重建 FTS5 索引（事务包裹，无空窗期） |
 | `GET /api/favorites` | GET | 收藏列表 |
 | `POST /api/favorites` | POST | 添加收藏 |
@@ -161,6 +162,7 @@ Doc_Lib/
 - **上传限制**：单文件上限 8 GB，前端拖放时即时校验 + 后端 Content-Length 预检 + 流式拦截（三道防线）
 - **数据完整性**：`catalog.json` 原子写入（`.tmp` + `os.replace()`），防止崩溃损坏；FTS5 重建使用事务包裹，无空窗期
 - **并发安全**：catalog 内存缓存读写加锁；SQLite WAL 模式支持读写并发
+- **CSRF 防护**：启动时生成随机 token，副作用接口（POST/DELETE）需携带 `X-DocLib-Token` 请求头，防止其他网站通过 `127.0.0.1` 调用本机接口
 - **网络隔离**：服务器绑定 `127.0.0.1`，仅限本机访问
 - **数据库容灾**：`doclib.db` 损坏可删除，启动时自动重建；FTS5 旧版 schema 自动检测迁移
 

@@ -78,6 +78,7 @@ async def root():
 def run_server(port: int = DEFAULT_PORT):
     """Run the server — called from server.py entry point."""
     import uvicorn
+    from app import config
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     url = f"http://localhost:{port}"
     logger.info("Doc_Lib Catalog Browser v3.0")
@@ -87,4 +88,7 @@ def run_server(port: int = DEFAULT_PORT):
     logger.info("  Serving at: %s", url)
     logger.info("  Press Ctrl+C to stop")
     webbrowser.open(url)
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    uvicorn_config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(uvicorn_config)
+    config._uvicorn_server = server
+    server.run()
