@@ -23,27 +23,27 @@
   <!-- Command Bar -->
   <div class="command-bar">
     <div class="command-left">
-      <button class="cmd-btn primary" onclick="showUploadDialog()">
+      <button class="cmd-btn primary" onclick="DL.showUploadDialog()">
         <span class="icon">+</span> 上传
       </button>
-      <button class="cmd-btn" id="batchBtn" disabled onclick="showBatchDialog()">
+      <button class="cmd-btn" id="batchBtn" disabled onclick="DL.showBatchDialog()">
         <span class="icon">&#128203;</span> 批量提取
       </button>
-      <button class="cmd-btn danger" id="batchDelBtn" disabled onclick="batchRecycle()">
+      <button class="cmd-btn danger" id="batchDelBtn" disabled onclick="DL.batchRecycle()">
         <span class="icon">&#128465;</span> 批量回收
       </button>
-      <button class="cmd-btn" id="clearSelBtn" style="display:none" onclick="clearSel()">清除选择</button>
+      <button class="cmd-btn" id="clearSelBtn" style="display:none" onclick="DL.clearSel()">清除选择</button>
     </div>
     <div class="command-right">
       <div class="search-box">
         <span class="search-icon">&#128269;</span>
         <input type="text" id="searchInput" placeholder="搜索文件名..." />
       </div>
-      <button class="cmd-btn" id="favFilterBtn" onclick="toggleFavFilter()" title="仅显示收藏">&#11088; 收藏</button>
-      <button class="cmd-btn" id="historyBtn" onclick="showHistory()">&#128337;</button>
-      <button class="cmd-btn" id="statsBtn" onclick="showStats()">&#128202;</button>
-      <button class="cmd-btn" id="extractDirBtn" onclick="toggleExtractDir()">&#128193;</button>
-      <button class="cmd-btn" id="darkModeBtn" onclick="toggleDarkMode()">&#9790;</button>
+      <button class="cmd-btn" id="favFilterBtn" onclick="DL.toggleFavFilter()" title="仅显示收藏">&#11088; 收藏</button>
+      <button class="cmd-btn" id="historyBtn" onclick="DL.showHistory()">&#128337;</button>
+      <button class="cmd-btn" id="statsBtn" onclick="DL.showStats()">&#128202;</button>
+      <button class="cmd-btn" id="extractDirBtn" onclick="DL.toggleExtractDir()">&#128193;</button>
+      <button class="cmd-btn" id="darkModeBtn" onclick="DL.toggleDarkMode()">&#9790;</button>
     </div>
   </div>
 
@@ -51,7 +51,7 @@
   <div class="extract-dir-row" id="extractDirRow" style="display:none;padding:4px 16px;background:var(--surface2);border-bottom:1px solid var(--border);gap:6px;align-items:center">
     <span style="font-size:13px;color:var(--text2);white-space:nowrap">提取到 </span>
     <input type="text" id="extractDirInput" style="flex:1;font-size:13px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)" />
-    <button class="btn-sm btn-extract" onclick="openExtractDir()">&#128194; 打开</button>
+    <button class="btn-sm btn-extract" onclick="DL.openExtractDir()">&#128194; 打开</button>
   </div>
 
   <!-- Main Layout -->
@@ -63,8 +63,8 @@
         <div class="nav-header">
           年份
           <div class="nav-actions">
-            <a onclick="sidebarYearChecked=new Set(yearOrder);rebuildSidebarCascade()">全选</a>
-            <a onclick="sidebarYearChecked=new Set([yearOrder[0]]);rebuildSidebarCascade()">清空</a>
+            <a onclick="DL.yearSelectAll()">全选</a>
+            <a onclick="DL.yearSelectFirst()">清空</a>
           </div>
         </div>
         <div id="yearNav"></div>
@@ -74,8 +74,8 @@
         <div class="nav-header">
           月份
           <div class="nav-actions">
-            <a onclick="monthSelAll()">全选</a>
-            <a onclick="monthSelNone()">清空</a>
+            <a onclick="DL.monthSelAll()">全选</a>
+            <a onclick="DL.monthSelNone()">清空</a>
           </div>
         </div>
         <div id="monthNav"></div>
@@ -103,7 +103,7 @@
       </div>
 
       <div class="nav-bottom">
-        <div class="nav-link" id="recycleBtn" onclick="showRecycleStatus()">
+        <div class="nav-link" id="recycleBtn" onclick="DL.showRecycleStatus()">
           <span class="icon">&#128465;</span> 回收站
         </div>
       </div>
@@ -187,9 +187,9 @@
     <div class="field">
       <label>预设目录</label>
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
-        <button class="btn-sm" style="background:var(--badge-bg);color:var(--text);border:1px solid var(--border);font-size:12px" onclick="setBatchDir(getExtractDir())">提取目录</button>
-        <button class="btn-sm" style="background:var(--badge-bg);color:var(--text);border:1px solid var(--border);font-size:12px" onclick="setBatchDir(getExtractDir()+'/券商')">券商</button>
-        <button class="btn-sm" style="background:var(--badge-bg);color:var(--text);border:1px solid var(--border);font-size:12px" onclick="setBatchDir(getExtractDir()+'/投行')">投行</button>
+        <button class="btn-sm" style="background:var(--badge-bg);color:var(--text);border:1px solid var(--border);font-size:12px" onclick="DL.setBatchDir(DL.getExtractDir())">提取目录</button>
+        <button class="btn-sm" style="background:var(--badge-bg);color:var(--text);border:1px solid var(--border);font-size:12px" onclick="DL.setBatchDir(DL.getExtractDir()+'/券商')">券商</button>
+        <button class="btn-sm" style="background:var(--badge-bg);color:var(--text);border:1px solid var(--border);font-size:12px" onclick="DL.setBatchDir(DL.getExtractDir()+'/投行')">投行</button>
       </div>
     </div>
     <div id="batchProgress" style="display:none">
@@ -213,8 +213,8 @@
     <div>以下 <b id="deleteCount">0</b> 个文件将被回收：</div>
     <div class="file-list" id="deleteFileList" style="margin-top:8px"></div>
     <div class="actions">
-      <button class="btn-sm" style="font-size:13px;padding:6px 14px;background:var(--badge-bg);color:var(--text);border:1px solid var(--border)" onclick="closeDeleteDialog()">取消</button>
-      <button class="btn-sm btn-danger" style="font-size:13px;padding:6px 14px" onclick="confirmDeleteAction()">移至回收站</button>
+      <button class="btn-sm" style="font-size:13px;padding:6px 14px;background:var(--badge-bg);color:var(--text);border:1px solid var(--border)" onclick="DL.closeDeleteDialog()">取消</button>
+      <button class="btn-sm btn-danger" style="font-size:13px;padding:6px 14px" onclick="DL.confirmDeleteAction()">移至回收站</button>
     </div>
   </div>
 </div>
@@ -229,12 +229,12 @@
            id="uploadDropZone"
            ondragover="this.style.borderColor='var(--accent)';event.preventDefault()"
            ondragleave="this.style.borderColor='var(--border)'"
-           ondrop="handleFileDrop(event)"
+           ondrop="DL.handleFileDrop(event)"
            onclick="document.getElementById('uploadFileInput').click()">
         <div style="font-size:32px;margin-bottom:6px">&#128230;</div>
         <div style="font-size:14px;color:var(--text)" id="uploadFileName">拖拽一个或多个 ZIP 文件到此处或点击选择</div>
         <div style="font-size:12px;color:var(--text2);margin-top:4px">仅支持 .zip 文件，单个上限 8 GB，可多选</div>
-        <input type="file" id="uploadFileInput" accept=".zip" multiple style="display:none" onchange="handleFileSelect(event)" />
+        <input type="file" id="uploadFileInput" accept=".zip" multiple style="display:none" onchange="DL.handleFileSelect(event)" />
       </div>
     </div>
     <div id="uploadFileList" style="margin-top:8px;max-height:180px;overflow-y:auto;display:none"></div>
@@ -249,99 +249,15 @@
   </div>
 </div>
 
-<!-- Scripts — loaded in dependency order -->
-<script src="/static/js/app.js"></script>
-<script src="/static/js/filters.js"></script>
-<script src="/static/js/table.js"></script>
-<script src="/static/js/dialogs.js"></script>
-<script src="/static/js/upload.js"></script>
-
+<!-- Scripts — ES module entry point -->
+<script type="module" src="/static/js/app.js?v=3"></script>
 <script>
-// ======== EVENT BINDINGS ========
-document.addEventListener('DOMContentLoaded',()=>{
-  init();
-
-  // Table scroll with header horizontal sync
-  const tableBody=document.getElementById('tableBody');
-  const tableHeader=document.getElementById('tableHeader');
-  tableBody.addEventListener('scroll',()=>{
-    tableHeader.scrollLeft=tableBody.scrollLeft;
-    onScroll();
-  });
-
-  // Search with 300ms debounce
-  let st;
-  document.getElementById('searchInput').addEventListener('input',e=>{
-    clearTimeout(st);
-    st=setTimeout(()=>{searchQuery=e.target.value.trim();applyFilters();},300);
-  });
-
-  // Source & Ext changes
-  document.getElementById('sourceSel').addEventListener('change',e=>{activeSource=e.target.value;applyFilters();});
-  document.getElementById('extNav').addEventListener('change',e=>{activeExt=e.target.value;applyFilters();});
-
-  // Multi-column sort
-  document.querySelectorAll('#tableHeader .col[data-sort]').forEach(col=>{
-    col.addEventListener('click',e=>{
-      const key=col.dataset.sort, shift=e.shiftKey;
-      if(shift){
-        const existing=sortCols.findIndex(s=>s.col===key);
-        if(existing>=0){sortCols[existing].dir=sortCols[existing].dir==='asc'?'desc':'asc';}
-        else{sortCols.push({col:key,dir:key==='date'||key==='size'?'desc':'asc'});}
-      } else {
-        const existing=sortCols.find(s=>s.col===key);
-        if(existing){sortCols=[{col:key,dir:existing.dir==='asc'?'desc':'asc'}];}
-        else{sortCols=[{col:key,dir:key==='date'||key==='size'?'desc':'asc'}];}
-      }
-      applyFilters();
-    });
-  });
-
-  // Select all
-  document.getElementById('selectAll').addEventListener('change',e=>{
-    if(e.target.checked) filteredItems.forEach(c=>selectedIds.add(c.work_path));
-    else selectedIds.clear();
-    updateSelection(); renderTable();
-  });
-
-  // Batch buttons
-  document.getElementById('batchBtn').addEventListener('click',showBatchDialog);
-  document.getElementById('batchDelBtn').addEventListener('click',batchRecycle);
-  document.getElementById('batchStartBtn').addEventListener('click',startBatchExtract);
-  document.getElementById('batchCancelBtn').addEventListener('click',closeBatchDialog);
-
-  // Panel close
-  document.getElementById('detailClose').addEventListener('click',closeDetail);
-  document.getElementById('detailOverlay').addEventListener('click',closeDetail);
-  document.getElementById('statsClose').addEventListener('click',closeStats);
-  document.getElementById('statsOverlay').addEventListener('click',closeStats);
-  document.getElementById('historyClose').addEventListener('click',closeHistory);
-  document.getElementById('historyOverlay').addEventListener('click',closeHistory);
-
-  // Upload
-  document.getElementById('uploadStartBtn').addEventListener('click', startUpload);
-  document.getElementById('uploadCancelBtn').addEventListener('click', closeUploadDialog);
-  document.getElementById('uploadDialog').addEventListener('click', function(e){ if(e.target===this) closeUploadDialog(); });
-
-  // Extract dir input
-  const extInput=document.getElementById('extractDirInput');
-  extInput.value=getExtractDir();
-  extInput.addEventListener('change',()=>saveExtractDir(extInput.value));
-  extInput.addEventListener('blur',()=>saveExtractDir(extInput.value));
-
-  // Keyboard
-  document.addEventListener('keydown',e=>{if(e.key==='Escape') closeAllPanels();});
-
-  // Column resize
-  initColumnResize();
-  window.addEventListener('resize',()=>renderTable());
-});
-
-function clearSel(){selectedIds.clear();updateSelection();renderTable();}
-
-function showRecycleStatus(){
-  showToast('回收站位于: work/.recycle_bin/ （可手动恢复文件）');
-}
+window.addEventListener('error', function(e) {
+  if (e.target && e.target.tagName === 'SCRIPT') {
+    var loading = document.getElementById('loading');
+    if (loading) loading.innerHTML = '<div style="color:#d13438">脚本加载失败: ' + (e.target.src || 'unknown') + '<br>请尝试 Ctrl+Shift+R 强制刷新</div>';
+  }
+}, true);
 </script>
 </body>
 </html>

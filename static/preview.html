@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Doc_Lib 预览</title>
+<style>
+  :root, [data-theme="light"] {
+    --bg: #e8e8e8;
+    --text: #323130;
+    --text2: #605e5c;
+    --header-bg: #252423;
+    --header-text: #fff;
+    --body-bg: #525659;
+  }
+  [data-theme="dark"] {
+    --bg: #1b1a19;
+    --text: #f3f2f1;
+    --text2: #a19f9d;
+    --header-bg: #1b1a19;
+    --header-text: #f3f2f1;
+    --body-bg: #1b1a19;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    height: 100vh; display: flex; flex-direction: column;
+    transition: background .3s, color .3s;
+  }
+  .preview-header {
+    background: var(--header-bg); color: var(--header-text);
+    padding: 6px 16px; display: flex; align-items: center; gap: 12px;
+    font-size: 13px; flex-shrink: 0; height: 36px;
+  }
+  .preview-header a { color: var(--header-text); text-decoration: none; cursor: pointer; font-size: 13px; }
+  .preview-header a:hover { text-decoration: underline; }
+  .preview-header .sep { color: #666; margin: 0 4px; }
+  .preview-header .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .preview-body {
+    flex: 1; overflow: auto; display: flex; align-items: center;
+    justify-content: center; background: var(--body-bg);
+  }
+  .preview-body.embed-mode { display: block; }
+  [data-theme="light"] .preview-body { background: #e8e8e8; }
+  a { color: #0078d4; text-decoration: none; }
+  a:hover { color: #106ebe; text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="preview-header">
+  <a href="/">&#8592; 返回目录</a>
+  <span class="sep">|</span>
+  <span>Doc_Lib 预览</span>
+  <span class="sep">|</span>
+  <span class="fname" id="filename"></span>
+  <a id="downloadLink" href="#" download style="font-size:12px;color:#ccc">&#128229; 下载</a>
+</div>
+<div class="preview-body" id="previewBody"></div>
+<script>
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  var workPath = params.get('work_path');
+  if (!workPath) {
+    document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#666">缺少 work_path 参数</div>';
+    return;
+  }
+
+  var filename = workPath.split('/').pop();
+  var extMatch = filename.match(/\.([a-z0-9]+)$/i);
+  var ext = extMatch ? extMatch[1].toLowerCase() : '';
+  var fileUrl = '/api/file?work_path=' + encodeURIComponent(workPath);
+  var downloadUrl = '/api/download?work_path=' + encodeURIComponent(workPath);
+
+  document.title = filename + ' — Doc_Lib 预览';
+  document.getElementById('filename').textContent = filename;
+  document.getElementById('downloadLink').href = downloadUrl;
+
+  var embedTypes = ['pdf', 'txt', 'csv', 'md', 'py', 'js', 'html', 'css', 'json', 'xml', 'log'];
+  var embed = '';
+
+  if (ext === 'pdf') {
+    embed = '<iframe src="' + fileUrl + '" style="width:100%;height:100%;border:none;min-height:100vh"></iframe>';
+  } else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].indexOf(ext) >= 0) {
+    embed = '<div style="display:flex;align-items:center;justify-content:center;height:100%"><img src="' + fileUrl + '" style="max-width:100%;max-height:100vh;object-fit:contain" alt=""></div>';
+  } else if (['mp4', 'webm', 'ogg'].indexOf(ext) >= 0) {
+    embed = '<video controls style="max-width:100%;max-height:90vh;margin:auto;display:block"><source src="' + fileUrl + '"></video>';
+  } else if (['mp3', 'wav', 'flac'].indexOf(ext) >= 0) {
+    embed = '<audio controls style="width:100%;margin-top:40px"><source src="' + fileUrl + '"></audio><p style="text-align:center;margin-top:20px;color:var(--text2)">' + filename + '</p>';
+  } else if (embedTypes.indexOf(ext) >= 0) {
+    embed = '<iframe src="' + fileUrl + '" style="width:100%;height:100%;border:none;min-height:100vh"></iframe>';
+  } else {
+    embed = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:80vh;gap:16px">' +
+      '<div style="font-size:64px">&#128196;</div>' +
+      '<div style="font-size:16px;font-weight:500">' + filename + '</div>' +
+      '<div style="color:var(--text2)">浏览器无法直接预览此格式</div>' +
+      '<a href="' + downloadUrl + '" style="display:inline-block;padding:8px 20px;background:#0078d4;color:#fff;border-radius:4px;text-decoration:none;font-size:14px">下载文件</a>' +
+      '</div>';
+  }
+
+  var bodyEl = document.getElementById('previewBody');
+  if (embedTypes.indexOf(ext) >= 0) {
+    bodyEl.classList.add('embed-mode');
+  }
+  bodyEl.innerHTML = embed;
+
+  if (localStorage.getItem('doclib-theme') === 'dark') {
+    document.documentElement.dataset.theme = 'dark';
+  }
+})();
+</script>
+</body>
+</html>

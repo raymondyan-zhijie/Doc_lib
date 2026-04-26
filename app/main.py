@@ -11,6 +11,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse as StarletteFileResponse
+
+
+class NoCacheStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs) -> StarletteFileResponse:
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
 
 from app.config import DEFAULT_PORT, DB_PATH, HTML_PATH, STATIC_DIR
 from app.routes.api import router
@@ -65,7 +75,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(router)
 
 if os.path.isdir(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/static", NoCacheStaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/", include_in_schema=False)

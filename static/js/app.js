@@ -1,142 +1,185 @@
 /* ============================================================
-   app.js — State, init, utility functions, theme, extract dir
+   app.js — Entry point, init, application wiring (ES module)
    ============================================================ */
 
-// ======== STATE ========
-let allItems=[], filteredItems=[], weekOrder=[], yearOrder=[], monthOrder=[], itemByPath=new Map();
-let selectedIds=new Set(), sortCols=[{col:'date',dir:'desc'}], searchQuery='';
-let activeCats=new Set(['01','02','03','04','05']), activeSource='', activeExt='', showFavOnly=false;
-let favoritesSet=new Set();
-let activeDetailPath=null;
-let token='';
-let rafId;
+import { state } from './state.js';
+import { esc, fmtSize, showToast, resolveItem, toggleDarkMode, initExtractDir, getExtractDir, saveExtractDir } from './utils.js';
+import { buildSidebar, buildYearNav, buildMonthNav, buildCatNav, buildExtNav,
+         toggleYearNav, toggleMonthNav, toggleCatNav,
+         rebuildSidebarCascade, monthSelAll, monthSelNone,
+         clearMonthFilter, clearYearFilter, clearSearch, clearSourceFilter,
+         clearExtFilter, clearCatChip, applyFilters, applySort,
+         yearSelectAll, yearSelectFirst,
+         updateSourceNav } from './filters.js';
+import { renderTable, onScroll, initColumnResize, toggleSel, updateSelection, updateStatusBar } from './table.js';
+import { previewFile, extractFile, confirmDelete, showDeleteDialog, closeDeleteDialog,
+         confirmDeleteAction, batchRecycle, showDetail, closeDetail, openFile,
+         showBatchDialog, setBatchDir, closeBatchDialog, startBatchExtract,
+         showHistory, closeHistory, showStats, closeStats,
+         toggleExtractDir, openExtractDir, closeAllPanels } from './dialogs.js';
+import { showUploadDialog, closeUploadDialog, handleFileDrop, handleFileSelect,
+         addUploadFiles, removeUploadFile, refreshUploadQueue, startUpload } from './upload.js';
 
-const ROW_H=40, BUFFER=12;
-const CAT_NAMES={'01':'重点报告','02':'国内券商','03':'投行报告','04':'小报告','05':'杂货'};
-const CAT_COLORS={'01':'var(--cat01)','02':'var(--cat02)','03':'var(--cat03)','04':'var(--cat04)','05':'var(--cat05)'};
-const MAX_UPLOAD_PER_FILE = 8 * 1024 * 1024 * 1024;
+// ======== window.DL dispatch — makes module functions visible to inline onclick handlers ========
+window.DL = {
+  // utils
+  esc, fmtSize, showToast, resolveItem, toggleDarkMode, getExtractDir, saveExtractDir,
+  // filters
+  buildSidebar, toggleYearNav, toggleMonthNav, toggleCatNav,
+  rebuildSidebarCascade, monthSelAll, monthSelNone,
+  clearMonthFilter, clearYearFilter, clearSearch, clearSourceFilter,
+  clearExtFilter, clearCatChip, applyFilters,
+  yearSelectAll, yearSelectFirst,
+  // table
+  renderTable, onScroll, initColumnResize, toggleSel, updateSelection,
+  // dialogs
+  previewFile, extractFile, confirmDelete, showDeleteDialog, closeDeleteDialog,
+  confirmDeleteAction, batchRecycle, showDetail, closeDetail, openFile,
+  showBatchDialog, setBatchDir, closeBatchDialog, startBatchExtract,
+  showHistory, closeHistory, showStats, closeStats,
+  toggleExtractDir, openExtractDir, closeAllPanels,
+  // upload
+  showUploadDialog, closeUploadDialog, handleFileDrop, handleFileSelect,
+  removeUploadFile, startUpload,
+  // app
+  init, toggleFav, toggleFavFilter, clearSel, showRecycleStatus,
+};
+
+// ======== FAV TOGGLE (needs renderTable from table.js) ========
+export async function toggleFav(wp) {
+  const c = state.itemByPath.get(wp); if (!c) return;
+  if (state.favoritesSet.has(wp)) {
+    state.favoritesSet.delete(wp);
+    await fetch('/api/favorites?work_path=' + encodeURIComponent(wp), { method: 'DELETE', headers: { 'X-DocLib-Token': state.token } });
+  } else {
+    state.favoritesSet.add(wp);
+    await fetch('/api/favorites', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-DocLib-Token': state.token }, body: JSON.stringify({ filename: c.filename, work_path: wp }) });
+  }
+  renderTable();
+}
+
+export function toggleFavFilter() {
+  state.showFavOnly = !state.showFavOnly;
+  document.getElementById('favFilterBtn').classList.toggle('active', state.showFavOnly);
+  applyFilters();
+}
+
+export function clearSel() {
+  state.selectedIds.clear();
+  updateSelection();
+  renderTable();
+}
+
+export function showRecycleStatus() {
+  showToast('回收站位于: work/.recycle_bin/ （可手动恢复文件）');
+}
 
 // ======== INIT ========
-async function init(){
-  try{
+export async function init() {
+  try {
     initExtractDir();
     const [catalogResp, favResp, cfgResp] = await Promise.all([
       fetch('/api/catalog'),
       fetch('/api/favorites'),
       fetch('/api/config'),
     ]);
-    allItems = await catalogResp.json();
+    state.allItems = await catalogResp.json();
     const favs = await favResp.json();
     const cfg = await cfgResp.json();
-    token = cfg.token || '';
-    favs.forEach(f => favoritesSet.add(f.work_path));
+    state.token = cfg.token || '';
+    favs.forEach(f => state.favoritesSet.add(f.work_path));
 
-    allItems.forEach(c => { itemByPath.set(c.work_path, c); });
-    const ws = new Set(allItems.map(c=>c.week));
-    weekOrder = [...ws].sort((a,b)=>{
-      const ma=a.match(/(\d+)年(\d+)月第(\d+)周/), mb=b.match(/(\d+)年(\d+)月第(\d+)周/);
-      if(!ma||!mb) return a.localeCompare(b);
-      return (ma[1]-mb[1])||(ma[2]-mb[2])||(ma[3]-mb[3]);
+    state.allItems.forEach(c => { state.itemByPath.set(c.work_path, c); });
+    const ws = new Set(state.allItems.map(c => c.week));
+    state.weekOrder = [...ws].sort((a, b) => {
+      const ma = a.match(/(\d+)年(\d+)月第(\d+)周/), mb = b.match(/(\d+)年(\d+)月第(\d+)周/);
+      if (!ma || !mb) return a.localeCompare(b);
+      return (ma[1] - mb[1]) || (ma[2] - mb[2]) || (ma[3] - mb[3]);
     });
-    const yrs=new Set(), mons=new Set();
-    weekOrder.forEach(w=>{const m=w.match(/(\d+)年/);if(m)yrs.add(m[1]);});
-    weekOrder.forEach(w=>{const m=w.match(/(\d+)年(\d+)月/);if(m)mons.add(m[2]+'月');});
-    yearOrder=[...yrs].sort();
-    monthOrder=[...mons].sort((a,b)=>parseInt(a)-parseInt(b));
+    const yrs = new Set(), mons = new Set();
+    state.weekOrder.forEach(w => { const m = w.match(/(\d+)年/); if (m) yrs.add(m[1]); });
+    state.weekOrder.forEach(w => { const m = w.match(/(\d+)年(\d+)月/); if (m) mons.add(m[2] + '月'); });
+    state.yearOrder = [...yrs].sort();
+    state.monthOrder = [...mons].sort((a, b) => parseInt(a) - parseInt(b));
+    state.sidebarYearChecked = new Set(state.yearOrder);
+    state.sidebarCatChecked = new Set(['01', '02', '03', '04', '05']);
     buildSidebar(); applyFilters();
-    document.getElementById('loading').style.display='none';
-    document.getElementById('app').style.display='flex';
-    // Init dark mode
-    if(localStorage.getItem('doclib-theme')==='dark'){
-      document.documentElement.dataset.theme='dark';
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    if (localStorage.getItem('doclib-theme') === 'dark') {
+      document.documentElement.dataset.theme = 'dark';
       document.getElementById('darkModeBtn').classList.add('active');
     }
-  }catch(e){
-    document.getElementById('loading').innerHTML='<div style="color:#d13438">加载失败: '+e.message+'<br>请确保 server.py 正在运行</div>';
+  } catch (e) {
+    document.getElementById('loading').innerHTML = '<div style="color:#d13438">加载失败: ' + e.message + '<br>请确保 server.py 正在运行</div>';
   }
 }
 
-// ======== UTILS ========
-function esc(s){
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+// ======== BOOTSTRAP ========
+document.addEventListener('DOMContentLoaded', () => {
+  init();
 
-function fmtSize(b){
-  if(b<1024)return b+' B';
-  if(b<1048576)return(b/1024).toFixed(1)+' KB';
-  if(b<1073741824)return(b/1048576).toFixed(1)+' MB';
-  return(b/1073741824).toFixed(2)+' GB';
-}
+  const tableBody = document.getElementById('tableBody');
+  const tableHeader = document.getElementById('tableHeader');
+  tableBody.addEventListener('scroll', () => {
+    tableHeader.scrollLeft = tableBody.scrollLeft;
+    onScroll();
+  });
 
-function showToast(msg,err){
-  const c=document.getElementById('toastContainer'),el=document.createElement('div');
-  el.className='toast'+(err?' error':'');
-  el.textContent=msg;
-  c.appendChild(el);
-  setTimeout(()=>{
-    el.style.animation='toast-out .2s ease forwards';
-    setTimeout(()=>el.remove(),300);
-  },2800);
-}
+  let st;
+  document.getElementById('searchInput').addEventListener('input', e => {
+    clearTimeout(st);
+    st = setTimeout(() => { state.searchQuery = e.target.value.trim(); applyFilters(); }, 300);
+  });
 
-function resolveItem(el){
-  let wp;
-  if(typeof el==='string'){wp=el;}
-  else if(el&&el.dataset){wp=el.dataset.wp;}
-  else{showToast('参数无效',true);return null;}
-  const c=itemByPath.get(wp);
-  if(!c){showToast('文件记录不存在',true);return null;}
-  return c;
-}
+  document.getElementById('sourceSel').addEventListener('change', e => { state.activeSource = e.target.value; applyFilters(); });
+  document.getElementById('extNav').addEventListener('change', e => { state.activeExt = e.target.value; applyFilters(); });
 
-// ======== THEME ========
-function toggleDarkMode(){
-  const isDark=document.documentElement.dataset.theme==='dark';
-  document.documentElement.dataset.theme=isDark?'light':'dark';
-  document.getElementById('darkModeBtn').classList.toggle('active',!isDark);
-  localStorage.setItem('doclib-theme',isDark?'light':'dark');
-}
+  document.querySelectorAll('#tableHeader .col[data-sort]').forEach(col => {
+    col.addEventListener('click', e => {
+      const key = col.dataset.sort, shift = e.shiftKey;
+      if (shift) {
+        const existing = state.sortCols.findIndex(s => s.col === key);
+        if (existing >= 0) { state.sortCols[existing].dir = state.sortCols[existing].dir === 'asc' ? 'desc' : 'asc'; }
+        else { state.sortCols.push({ col: key, dir: key === 'date' || key === 'size' ? 'desc' : 'asc' }); }
+      } else {
+        const existing = state.sortCols.find(s => s.col === key);
+        if (existing) { state.sortCols = [{ col: key, dir: existing.dir === 'asc' ? 'desc' : 'asc' }]; }
+        else { state.sortCols = [{ col: key, dir: key === 'date' || key === 'size' ? 'desc' : 'asc' }]; }
+      }
+      applyFilters();
+    });
+  });
 
-// ======== EXTRACT DIR ========
-const EXTRACT_DIR_KEY='doclib_extract_dir';
-let _defaultExtractDir='';
-let _platform='Windows';
+  document.getElementById('selectAll').addEventListener('change', e => {
+    if (e.target.checked) state.filteredItems.forEach(c => state.selectedIds.add(c.work_path));
+    else state.selectedIds.clear();
+    updateSelection(); renderTable();
+  });
 
-async function initExtractDir(){
-  try{
-    const r=await fetch('/api/config');
-    const cfg=await r.json();
-    _defaultExtractDir=cfg.default_extract_dir||'';
-    _platform=cfg.platform||'Windows';
-  }catch(e){_defaultExtractDir='';}
-}
+  document.getElementById('batchBtn').addEventListener('click', showBatchDialog);
+  document.getElementById('batchDelBtn').addEventListener('click', batchRecycle);
+  document.getElementById('batchStartBtn').addEventListener('click', startBatchExtract);
+  document.getElementById('batchCancelBtn').addEventListener('click', closeBatchDialog);
 
-function getExtractDir(){
-  let v=localStorage.getItem(EXTRACT_DIR_KEY);
-  if(!v||!v.trim()){
-    v=_defaultExtractDir||'extracted';
-    if(v) localStorage.setItem(EXTRACT_DIR_KEY,v);
-  }
-  return v;
-}
+  document.getElementById('detailClose').addEventListener('click', closeDetail);
+  document.getElementById('detailOverlay').addEventListener('click', closeDetail);
+  document.getElementById('statsClose').addEventListener('click', closeStats);
+  document.getElementById('statsOverlay').addEventListener('click', closeStats);
+  document.getElementById('historyClose').addEventListener('click', closeHistory);
+  document.getElementById('historyOverlay').addEventListener('click', closeHistory);
 
-function saveExtractDir(v){localStorage.setItem(EXTRACT_DIR_KEY,v.trim());}
+  document.getElementById('uploadStartBtn').addEventListener('click', startUpload);
+  document.getElementById('uploadCancelBtn').addEventListener('click', closeUploadDialog);
+  document.getElementById('uploadDialog').addEventListener('click', function (e) { if (e.target === this) closeUploadDialog(); });
 
-// ======== FAV TOGGLE (used by dialogs too) ========
-async function toggleFav(wp){
-  const c=itemByPath.get(wp); if(!c)return;
-  if(favoritesSet.has(wp)){
-    favoritesSet.delete(wp);
-    await fetch(`/api/favorites?work_path=${encodeURIComponent(wp)}`,{method:'DELETE',headers:{'X-DocLib-Token':token}});
-  } else {
-    favoritesSet.add(wp);
-    await fetch('/api/favorites',{method:'POST',headers:{'Content-Type':'application/json','X-DocLib-Token':token},body:JSON.stringify({filename:c.filename,work_path:wp})});
-  }
-  renderTable();
-}
+  const extInput = document.getElementById('extractDirInput');
+  extInput.value = getExtractDir();
+  extInput.addEventListener('change', () => saveExtractDir(extInput.value));
+  extInput.addEventListener('blur', () => saveExtractDir(extInput.value));
 
-function toggleFavFilter(){
-  showFavOnly=!showFavOnly;
-  document.getElementById('favFilterBtn').classList.toggle('active',showFavOnly);
-  applyFilters();
-}
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllPanels(); });
+
+  initColumnResize();
+  window.addEventListener('resize', () => renderTable());
+});

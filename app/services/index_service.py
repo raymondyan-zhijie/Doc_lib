@@ -1,7 +1,7 @@
 """
 Full-text search index using SQLite FTS5.
-Also manages favorites and browsing history.
-Catalog is cached in memory (mtime-based invalidation).
+Also manages favorites, browsing history, and catalog.
+Catalog is stored in SQLite (no more catalog.json in-memory cache).
 """
 
 import json
@@ -13,9 +13,6 @@ from datetime import datetime
 from app.config import CATALOG_PATH, DB_PATH
 
 _lock = threading.Lock()
-_catalog = None
-_catalog_mtime = 0
-_catalog_by_wp = None
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -25,116 +22,148 @@ def _get_conn() -> sqlite3.Connection:
     return conn
 
 
-def _get_catalog() -> list[dict]:
-    """Load catalog.json from disk, with in-memory caching based on file mtime."""
-    global _catalog, _catalog_mtime, _catalog_by_wp
-    try:
-        mtime = os.path.getmtime(CATALOG_PATH)
-    except OSError:
-        return []
-    with _lock:
-        if _catalog is None or mtime != _catalog_mtime:
-            with open(CATALOG_PATH, "r", encoding="utf-8") as f:
-                _catalog = json.load(f)
-            _catalog_mtime = mtime
-            _catalog_by_wp = {item["work_path"]: item for item in _catalog}
-        return _catalog
-
-
-def _get_catalog_by_wp() -> dict:
-    """Return catalog indexed by work_path for O(1) lookup."""
-    global _catalog_by_wp
-    _get_catalog()
-    return _catalog_by_wp or {}
-
-
-def invalidate_cache():
-    """Force next _get_catalog() to reload from disk."""
-    global _catalog, _catalog_mtime, _catalog_by_wp
-    _catalog = None
-    _catalog_mtime = 0
-    _catalog_by_wp = None
-
+# ============ Schema & Migration ============
 
 def init_db():
-    """Create tables if they don't exist. Migrates old FTS schema if needed."""
+    """Create tables and migrate from catalog.json if needed."""
     conn = _get_conn()
     try:
-        # Check if old FTS schema (content='', no work_path) exists and drop it
-        try:
-            cols = conn.execute("PRAGMA table_info('fts_index')").fetchall()
-            col_names = [c[1] for c in cols]
-            if "work_path" not in col_names:
-                conn.execute("DROP TABLE IF EXISTS fts_index")
-        except sqlite3.OperationalError:
-            pass  # Table doesn't exist yet
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS catalog (
+                work_path TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                category TEXT NOT NULL,
+                cat_num TEXT NOT NULL,
+                week TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT '',
+                lang TEXT NOT NULL DEFAULT '中文',
+                pages INTEGER,
+                size INTEGER NOT NULL DEFAULT 0,
+                date TEXT NOT NULL,
+                ext TEXT NOT NULL
+            )
+        """)
 
-        conn.executescript("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS favorites (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 filename TEXT NOT NULL,
                 work_path TEXT NOT NULL UNIQUE,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
+            )
+        """)
 
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 filename TEXT NOT NULL,
                 work_path TEXT NOT NULL,
                 opened_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
+            )
+        """)
 
-            CREATE INDEX IF NOT EXISTS idx_history_opened ON history(opened_at DESC);
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_history_opened ON history(opened_at DESC)")
 
+        # Check if FTS needs migration (old standalone → new content=catalog)
+        cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='fts_index'")
+        row = cur.fetchone()
+        if row and 'content=' not in (row[0] or ''):
+            conn.execute("DROP TABLE IF EXISTS fts_index")
+
+        conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS fts_index USING fts5(
                 work_path,
                 filename,
                 category,
                 source,
                 week,
+                content=catalog,
+                content_rowid=rowid,
                 tokenize='unicode61'
-            );
+            )
         """)
-    finally:
-        conn.close()
 
-
-def build_full_index():
-    """Build FTS5 index from catalog.json. Replaces existing index."""
-    conn = _get_conn()
-    try:
-        catalog = _get_catalog()
-
-        conn.execute("BEGIN")
-        try:
-            try:
-                conn.execute("DELETE FROM fts_index")
-            except Exception:
-                pass
-
-            if not catalog:
-                conn.commit()
-                invalidate_cache()
-                return 0
-
-            for item in catalog:
+        # Migrate from catalog.json if catalog table is empty
+        count = conn.execute("SELECT COUNT(*) FROM catalog").fetchone()[0]
+        if count == 0 and os.path.isfile(CATALOG_PATH):
+            with open(CATALOG_PATH, "r", encoding="utf-8") as f:
+                entries = json.load(f)
+            for item in entries:
+                conn.execute(
+                    "INSERT OR IGNORE INTO catalog(work_path, filename, category, cat_num, week, source, lang, pages, size, date, ext) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (item["work_path"], item["filename"], item.get("category", ""), item.get("cat_num", ""),
+                     item["week"], item.get("source", ""), item.get("lang", "中文"),
+                     item.get("pages"), item.get("size", 0), item.get("date", ""), item.get("ext", "")),
+                )
                 conn.execute(
                     "INSERT INTO fts_index(work_path, filename, category, source, week) VALUES (?, ?, ?, ?, ?)",
                     (item["work_path"], item["filename"], item.get("category", ""), item.get("source", ""), item["week"]),
                 )
             conn.commit()
+
+    finally:
+        conn.close()
+
+
+# ============ Catalog Access ============
+
+def get_catalog() -> list[dict]:
+    """Return all catalog entries from SQLite."""
+    conn = _get_conn()
+    try:
+        rows = conn.execute("SELECT * FROM catalog ORDER BY week DESC, filename").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_catalog_by_wp() -> dict:
+    """Return catalog indexed by work_path for O(1) lookup."""
+    conn = _get_conn()
+    try:
+        rows = conn.execute("SELECT * FROM catalog").fetchall()
+        return {r["work_path"]: dict(r) for r in rows}
+    finally:
+        conn.close()
+
+
+def catalog_count() -> int:
+    conn = _get_conn()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM catalog").fetchone()[0]
+    finally:
+        conn.close()
+
+
+# ============ Full-Text Index ============
+
+def build_full_index():
+    """Rebuild FTS5 index from catalog table. Transaction-wrapped."""
+    conn = _get_conn()
+    try:
+        rows = conn.execute("SELECT work_path, filename, category, source, week FROM catalog").fetchall()
+        conn.execute("BEGIN")
+        try:
+            conn.execute("DELETE FROM fts_index")
+            for r in rows:
+                conn.execute(
+                    "INSERT INTO fts_index(work_path, filename, category, source, week) VALUES (?, ?, ?, ?, ?)",
+                    (r["work_path"], r["filename"], r["category"], r["source"] or "", r["week"]),
+                )
+            conn.commit()
         except Exception:
             conn.rollback()
             raise
-
-        invalidate_cache()
-        return len(catalog)
+        return len(rows)
     finally:
         conn.close()
 
 
 def incremental_index(new_items: list[dict]):
     """Add new items to the FTS5 index without rebuilding."""
+    if not new_items:
+        return
     conn = _get_conn()
     try:
         conn.execute("BEGIN")
@@ -153,7 +182,7 @@ def incremental_index(new_items: list[dict]):
 
 
 def search(query: str, limit: int = 50) -> list[dict]:
-    """Full-text search. Returns list of matching catalog items."""
+    """Full-text search. Returns full catalog items via content= join."""
     q = query.strip()
     if not q:
         return []
@@ -162,7 +191,7 @@ def search(query: str, limit: int = 50) -> list[dict]:
     try:
         try:
             rows = conn.execute(
-                "SELECT work_path FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT ?",
+                "SELECT * FROM catalog WHERE rowid IN (SELECT rowid FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT ?)",
                 (q, limit),
             ).fetchall()
         except sqlite3.OperationalError:
@@ -171,25 +200,15 @@ def search(query: str, limit: int = 50) -> list[dict]:
                 return []
             try:
                 rows = conn.execute(
-                    "SELECT work_path FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT ?",
+                    "SELECT * FROM catalog WHERE rowid IN (SELECT rowid FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT ?)",
                     (simple_q, limit),
                 ).fetchall()
             except sqlite3.OperationalError:
                 return []
+
+        return [dict(r) for r in rows]
     finally:
         conn.close()
-
-    by_wp = _get_catalog_by_wp()
-    if not by_wp:
-        return []
-
-    results = []
-    for row in rows:
-        wp = row[0]
-        if wp in by_wp:
-            results.append(by_wp[wp])
-
-    return results
 
 
 def remove_from_index(work_path: str):
@@ -244,7 +263,6 @@ def is_favorite(work_path: str) -> bool:
 
 
 def remove_history_by_wp(work_path: str):
-    """Remove all history entries for a given work_path."""
     conn = _get_conn()
     try:
         conn.execute("DELETE FROM history WHERE work_path = ?", (work_path,))
@@ -280,34 +298,27 @@ def get_history(limit: int = 100) -> list[dict]:
         conn.close()
 
 
-# ============ Statistics ============
+# ============ Statistics (SQL aggregate) ============
 
 def get_source_stats() -> dict:
-    """Get report count by source, grouped by category."""
-    catalog = _get_catalog()
-    if not catalog:
-        return {}
-    stats = {}
-    for item in catalog:
-        if item.get("source"):
-            key = (item["cat_num"], item["source"])
-            stats[key] = stats.get(key, 0) + 1
-    return {"sources": [
-        {"cat_num": k[0], "source": k[1], "count": v}
-        for k, v in sorted(stats.items(), key=lambda x: -x[1])
-    ]}
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT cat_num, source, COUNT(*) as count FROM catalog WHERE source != '' "
+            "GROUP BY cat_num, source ORDER BY count DESC"
+        ).fetchall()
+        return {"sources": [{"cat_num": r["cat_num"], "source": r["source"], "count": r["count"]} for r in rows]}
+    finally:
+        conn.close()
 
 
 def get_weekly_stats() -> dict:
-    """Get report count by week and category."""
-    catalog = _get_catalog()
-    if not catalog:
-        return {}
-    stats = {}
-    for item in catalog:
-        key = (item["week"], item["cat_num"])
-        stats[key] = stats.get(key, 0) + 1
-    return {"weekly": [
-        {"week": k[0], "cat_num": k[1], "count": v}
-        for k, v in sorted(stats.items())
-    ]}
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT week, cat_num, COUNT(*) as count FROM catalog "
+            "GROUP BY week, cat_num ORDER BY week, cat_num"
+        ).fetchall()
+        return {"weekly": [{"week": r["week"], "cat_num": r["cat_num"], "count": r["count"]} for r in rows]}
+    finally:
+        conn.close()
