@@ -51,7 +51,8 @@ async def serve_html():
 @router.get("/catalog")
 async def get_catalog():
     if not os.path.isfile(CATALOG_PATH):
-        raise HTTPException(404, "catalog.json not found")
+        return Response(content="[]", media_type="application/json",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     with open(CATALOG_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
     return Response(content=json.dumps(data, ensure_ascii=False), media_type="application/json",
@@ -311,7 +312,16 @@ async def _upload_one_zip(file: UploadFile) -> dict:
         return {"filename": file.filename, "status": "error", "error": f"Extraction failed: {e}"}
 
     # Scan new entries (FTS rebuild happens once after all files)
-    new_count = catalog_service.scan_work_week(week_label)
+    try:
+        new_count = catalog_service.scan_work_week(week_label)
+    except Exception as e:
+        # Rollback: remove extracted files and saved ZIP
+        target_dir = os.path.join(WORK_DIR, week_label)
+        if os.path.isdir(target_dir):
+            shutil.rmtree(target_dir, ignore_errors=True)
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        return {"filename": file.filename, "status": "error", "error": f"Catalog scan failed: {e}"}
 
     return {
         "filename": file.filename,

@@ -61,6 +61,14 @@ requirements.txt        ← Python 依赖（锁定版本）
 
 **停止**：点击桌面状态窗口的「Stop Server」或 POST `/api/shutdown`。
 
+### 首次使用
+
+1. **安装依赖**：`pip install -r requirements.txt`
+2. **启动服务**：双击 `start_hidden.vbs`（Windows）或 `python server.py`（终端）
+   - 首次启动自动创建空的 `catalog.json` 和 `doclib.db`，浏览器正常打开页面（目录为空）
+3. **添加数据**：点击标题栏 **+** 按钮 → 拖拽 ZIP 文件（文件名需含周次标签，如 `2026年4月第4周.zip`）→ 自动上传、解压、建索引
+4. **开始使用**：上传完成后即可浏览、搜索、打开文件
+
 ## 功能
 
 ### 浏览与筛选

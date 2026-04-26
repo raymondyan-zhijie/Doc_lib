@@ -104,8 +104,6 @@ def build_full_index():
     conn = _get_conn()
     try:
         catalog = _get_catalog()
-        if not catalog:
-            return 0
 
         conn.execute("BEGIN")
         try:
@@ -113,6 +111,11 @@ def build_full_index():
                 conn.execute("DELETE FROM fts_index")
             except Exception:
                 pass
+
+            if not catalog:
+                conn.commit()
+                invalidate_cache()
+                return 0
 
             for item in catalog:
                 conn.execute(
