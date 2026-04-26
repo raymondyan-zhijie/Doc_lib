@@ -566,7 +566,7 @@ function renderTable(){
       <div class="cell"><input type="checkbox" ${sel?'checked':''} onclick="event.stopPropagation();toggleSel('${esc(wp)}')" /></div>
       <div class="cell week">${esc(ws)}</div>
       <div class="cell cat"><span class="cat-tag" data-cat="${c.cat_num}">${CAT_NAMES[c.cat_num]}</span></div>
-      <div class="cell source">${esc(c.source)}</div>
+      <div class="cell source">${esc(c.source||'--')}</div>
       <div class="cell filename" title="${esc(c.filename)}">${esc(c.filename)}</div>
       <div class="cell pages">${c.pages||'--'}</div>
       <div class="cell size">${fmtSize(c.size)}</div>
