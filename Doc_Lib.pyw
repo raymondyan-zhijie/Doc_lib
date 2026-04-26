@@ -44,7 +44,10 @@ def _run_console_mode(port):
     print(f"Doc_Lib v3.0 — http://localhost:{port}")
     print("Press Ctrl+C to stop.")
     webbrowser.open(f"http://localhost:{port}")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    uv_config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(uv_config)
+    app_config._uvicorn_server = server
+    server.run()
 
 
 try:
@@ -121,8 +124,8 @@ if _HAS_TK:
 
         def _run_server(self):
             try:
-                config = uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning")
-                server = uvicorn.Server(config)
+                uv_config = uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning")
+                server = uvicorn.Server(uv_config)
                 app_config._uvicorn_server = server
                 self.server_started.set()
                 server.run()
