@@ -189,6 +189,32 @@ async def batch_progress(task_id: str = Query(...)):
     return progress
 
 
+@router.post("/batch-delete")
+async def batch_delete(req: BatchExtractRequest, _token: str = Depends(verify_token)):
+    """Delete multiple files from work/, catalog, FTS, favorites, and history."""
+    if not req.items:
+        raise HTTPException(400, "No items specified")
+    deleted = []
+    errors = []
+    for item in req.items:
+        wp = item.work_path
+        try:
+            path = zip_service.resolve_work_path(wp)
+            if os.path.isfile(path):
+                os.remove(path)
+            catalog_service.remove_from_catalog(wp)
+            index_service.remove_from_index(wp)
+            index_service.remove_favorite(wp)
+            index_service.remove_history_by_wp(wp)
+            deleted.append(wp)
+        except PermissionError:
+            errors.append(f"{wp}: Access denied")
+        except FileNotFoundError:
+            errors.append(f"{wp}: File not found")
+    index_service.invalidate_cache()
+    return {"status": "ok", "deleted": len(deleted), "errors": errors}
+
+
 # ============ Full-Text Search ============
 
 @router.get("/search")

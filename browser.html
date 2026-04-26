@@ -87,6 +87,9 @@ a:hover { text-decoration:underline; }
 .table-header .col { font-size:11px; font-weight:600; color:var(--text2); cursor:pointer; display:flex; align-items:center; gap:1px; padding:0 3px; white-space:nowrap; }
 .table-header .col:hover { color:var(--text); }
 .table-header .col .arrow { font-size:9px; }
+.col-resizer { position:absolute; right:0; top:0; bottom:0; width:4px; cursor:col-resize; z-index:1; }
+.col-resizer:hover,.col-resizer.active { background:var(--accent); }
+.table-header .col { position:relative; overflow:visible; }
 .table-body { flex:1; overflow-y:auto; position:relative; }
 .table-spacer { width:100%; }
 .table-rows { position:absolute; top:0; left:0; right:0; padding:0 6px; }
@@ -273,7 +276,7 @@ input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:v
       <div class="col" data-sort="size">大小 <span class="arrow"></span></div>
       <div class="col" data-sort="date">日期 <span class="arrow"></span></div>
       <div class="col">类型</div>
-      <div class="col">操作</div>
+      <div class="col actions-col">操作</div>
     </div>
     <div class="table-body" id="tableBody">
       <div class="table-spacer" id="tableSpacer"></div>
@@ -286,6 +289,7 @@ input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:v
     <span class="sel-count" id="selCount"></span>
     <span class="sel-size" id="selSize"></span>
     <button class="btn btn-primary" id="batchBtn" disabled>批量提取</button>
+    <button class="btn btn-danger" id="batchDelBtn" disabled>批量删除</button>
     <button class="btn-clear" id="clearSelBtn">清除选择</button>
   </div>
 </div>
@@ -570,8 +574,9 @@ function renderTable(){
       <div class="cell"><span class="${ec}">${c.ext.replace('.','')}</span></div>
       <div class="cell actions">
         <button class="btn-fav${fav?' is-fav':''}" onclick="event.stopPropagation();toggleFav('${esc(wp)}')" title="收藏">${fav?'★':'☆'}</button>
-        <button class="btn-sm btn-open" data-wp="${esc(wp)}" onclick="event.stopPropagation();openFile(this)">打开</button>
+        <button class="btn-sm btn-open" data-wp="${esc(wp)}" onclick="event.stopPropagation();previewFile(this)">预览</button>
         <button class="btn-sm btn-extract" data-wp="${esc(wp)}" onclick="event.stopPropagation();extractFile(this)">提取</button>
+        <button class="btn-sm btn-danger" data-wp="${esc(wp)}" onclick="event.stopPropagation();confirmDelete(this)">删除</button>
       </div>
     </div>`;
   }
@@ -579,7 +584,7 @@ function renderTable(){
   rows.querySelectorAll('.table-row').forEach(r=>{
     r.addEventListener('click',e=>{
       if(e.target.tagName==='INPUT'||e.target.tagName==='BUTTON') return;
-      showDetail(parseInt(r.dataset.idx));
+      showDetail(r.dataset.wp);
     });
   });
   // Sort arrows
@@ -659,6 +664,7 @@ function updateSelection(){
   const ts=[...selectedIds].reduce((s,wp)=>{const c=itemByPath.get(wp);return s+(c?c.size:0);},0);
   document.getElementById('selSize').textContent=cnt>0?`(${fmtSize(ts)})`:'';
   document.getElementById('batchBtn').disabled=cnt===0;
+  document.getElementById('batchDelBtn').disabled=cnt===0;
   document.getElementById('selectAll').checked=cnt>0&&cnt===filteredItems.length;
 }
 
@@ -680,9 +686,9 @@ function showDetail(wp){
     h+=`<div class="field"><div class="label">${l}</div><div class="value">${esc(String(v))}</div></div>`;
   });
   h+=`<div class="panel-actions">
-    <button class="btn btn-primary" data-wp="${esc(wp)}" onclick="openFile(this)">打开</button>
+    <button class="btn btn-primary" data-wp="${esc(wp)}" onclick="previewFile(this)">预览</button>
+    <button class="btn btn-secondary" data-wp="${esc(wp)}" onclick="openFile(this)">系统打开</button>
     <button class="btn btn-secondary" data-wp="${esc(wp)}" onclick="extractFile(this)">提取</button>
-    <button class="btn btn-secondary" data-wp="${esc(wp)}" onclick="previewPDF(this)">PDF预览</button>
     <button class="btn btn-secondary" onclick="toggleFav('${esc(wp)}');showDetail('${esc(wp)}')">${fav?'取消收藏':'收藏'}</button>
     <button class="btn btn-danger" data-wp="${esc(wp)}" onclick="confirmDelete(this)">删除</button>
   </div>`;
@@ -700,9 +706,8 @@ function closeDetail(){
   document.getElementById('detailOverlay').classList.remove('visible');
 }
 
-async function previewPDF(el){
+function previewFile(el){
   const c=resolveItem(el); if(!c)return;
-  if(c.ext!=='.pdf'){showToast('仅支持PDF预览',true);return;}
   window.open('/api/file?work_path='+encodeURIComponent(c.work_path),'_blank');
 }
 
@@ -784,6 +789,27 @@ async function startBatchExtract(){
   }catch(e){showToast(e.message,true);document.getElementById('batchStartBtn').disabled=false;}
 }
 function closeBatchDialog(){document.getElementById('batchDialog').classList.remove('visible');}
+
+async function batchDelete(){
+  const items=[...selectedIds].map(wp=>itemByPath.get(wp)).filter(Boolean);
+  if(!items.length)return;
+  if(!confirm('确定批量删除 '+items.length+' 个文件？\\n\\n此操作不可撤销。文件将从磁盘、目录和索引中永久删除。')) return;
+  showToast('正在删除 '+items.length+' 个文件...');
+  try{
+    const r=await fetch('/api/batch-delete',{method:'POST',headers:{'Content-Type':'application/json','X-DocLib-Token':token},body:JSON.stringify({items:items.map(c=>({work_path:c.work_path}))})});
+    const d=await r.json();
+    // Remove from state
+    d.deleted.forEach(wp=>{
+      itemByPath.delete(wp);
+      selectedIds.delete(wp);
+      favoritesSet.delete(wp);
+    });
+    allItems=allItems.filter(it=>!d.deleted.includes(it.work_path));
+    if(d.deleted.includes(activeDetailPath)) closeDetail();
+    applyFilters();
+    showToast('已删除 '+d.deleted+' 个, '+d.errors.length+' 个失败');
+  }catch(e){showToast(e.message,true);}
+}
 
 // ======== FAVORITES FILTER ========
 function toggleFavFilter(){
@@ -1083,6 +1109,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   // Batch
   document.getElementById('batchBtn').addEventListener('click',showBatchDialog);
+  document.getElementById('batchDelBtn').addEventListener('click',batchDelete);
   document.getElementById('batchStartBtn').addEventListener('click',startBatchExtract);
   document.getElementById('batchCancelBtn').addEventListener('click',closeBatchDialog);
 
@@ -1102,9 +1129,41 @@ document.addEventListener('DOMContentLoaded',()=>{
   // Keyboard
   document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDetail();closeStats();closeHistory();closeBatchDialog();closeUploadDialog();}});
 
-  // Resize
+  // Column resize
+  initColumnResize();
+  // Window resize
   window.addEventListener('resize',()=>renderTable());
 });
+
+function initColumnResize(){
+  const header=document.getElementById('tableHeader');
+  const cols=header.querySelectorAll('.col');
+  let resizing=null, startX=0, startW=0;
+  cols.forEach((col,i)=>{
+    if(i===cols.length-1) return; // Last column (actions) not resizable
+    const r=document.createElement('div'); r.className='col-resizer';
+    r.addEventListener('mousedown',e=>{
+      e.preventDefault(); e.stopPropagation();
+      resizing={col, i, startX:e.clientX, startW:col.getBoundingClientRect().width};
+      r.classList.add('active');
+      document.body.style.cursor='col-resize'; document.body.style.userSelect='none';
+    });
+    col.appendChild(r);
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!resizing) return;
+    const diff=e.clientX-resizing.startX;
+    const newW=Math.max(30, resizing.startW+diff);
+    const template=getComputedStyle(header).gridTemplateColumns.split(' ');
+    template[resizing.i]=newW+'px';
+    header.style.gridTemplateColumns=template.join(' ');
+  });
+  document.addEventListener('mouseup',()=>{
+    if(resizing) document.body.style.cursor=''; document.body.style.userSelect='';
+    resizing=null;
+    document.querySelectorAll('.col-resizer.active').forEach(r=>r.classList.remove('active'));
+  });
+}
 </script>
 </body>
 </html>

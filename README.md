@@ -146,6 +146,7 @@ Doc_Lib/
 | `POST /api/extract` | POST | 复制文件到指定目录（body: `{work_path, target_dir}`，target_dir 限制在 BASE_DIR 内） |
 | `GET /api/file?work_path=` | GET | 直接提供文件（浏览器预览） |
 | `POST /api/batch-extract` | POST | 批量复制文件到指定目录，返回 task_id 轮询进度 |
+| `POST /api/batch-delete` | POST | 批量删除文件（磁盘+目录+索引+收藏+历史） |
 | `GET /api/batch-progress?task_id=` | GET | 批量进度查询 |
 | `POST /api/open-dir` | POST | 在文件管理器中打开目录（body: `{path}`，限制在 BASE_DIR 内） |
 | `POST /api/delete` | POST | 删除文件：从磁盘、目录、FTS、收藏、历史中彻底移除（body: `{work_path}`） |
