@@ -232,6 +232,14 @@ input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:v
     </div>
     <div class="divider"></div>
     <div class="filter-group">
+      <label>年份</label>
+      <div class="week-dd" id="yearDd">
+        <div class="week-dd-btn" id="yearDdBtn">全部年份 &#9662;</div>
+        <div class="week-dd-list" id="yearDdList"></div>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="filter-group">
       <label>分类</label>
       <button class="cat-btn active" data-cat="01">重点</button>
       <button class="cat-btn active" data-cat="02">券商</button>
@@ -369,7 +377,7 @@ input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:v
 
 <script>
 // ======== STATE ========
-let allItems=[], filteredItems=[], weekOrder=[], itemByPath=new Map();
+let allItems=[], filteredItems=[], weekOrder=[], yearOrder=[], itemByPath=new Map();
 let selectedIds=new Set(), sortCols=[{col:'date',dir:'desc'}], searchQuery='';
 let activeCats=new Set(['01','02','03','04','05']), activeSource='', activeExt='', showFavOnly=false;
 let favoritesSet=new Set(); // work_path keys
@@ -402,6 +410,9 @@ async function init(){
       if(!ma||!mb) return a.localeCompare(b);
       return (ma[1]-mb[1])||(ma[2]-mb[2])||(ma[3]-mb[3]);
     });
+    const yrs=new Set();
+    weekOrder.forEach(w=>{const m=w.match(/(\d+)年/);if(m)yrs.add(m[1]);});
+    yearOrder=[...yrs].sort();
     buildFilters(); applyFilters();
     document.getElementById('loading').style.display='none';
     document.getElementById('app').style.display='flex';
@@ -424,6 +435,16 @@ function buildFilters(){
   wl.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.addEventListener('change',()=>{updateWeekBtn();applyFilters();}));
   updateWeekBtn();
 
+  const yl=document.getElementById('yearDdList');
+  let yh='<div class="act-row"><a onclick="yearSelAll()">全选</a><a onclick="yearSelNone()">清空</a></div>';
+  yearOrder.forEach(y=>{
+    const cnt=allItems.filter(c=>c.week.startsWith(y+'年')).length;
+    yh+=`<div class="item"><label><input type="checkbox" value="${y}" checked /> ${y}年 (${cnt})</label></div>`;
+  });
+  yl.innerHTML=yh;
+  yl.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.addEventListener('change',()=>{updateYearBtn();applyFilters();}));
+  updateYearBtn();
+
   const exts={};
   allItems.forEach(c=>{exts[c.ext]=(exts[c.ext]||0)+1;});
   const es=document.getElementById('extSel');
@@ -440,6 +461,15 @@ function updateWeekBtn(){
 function weekSelAll(){document.getElementById('weekDdList').querySelectorAll('input[type="checkbox"]').forEach(c=>c.checked=true);updateWeekBtn();applyFilters();}
 function weekSelNone(){document.getElementById('weekDdList').querySelectorAll('input[type="checkbox"]').forEach(c=>c.checked=false);updateWeekBtn();applyFilters();}
 function clearWeekFilter(){weekSelAll();}
+
+function updateYearBtn(){
+  const btn=document.getElementById('yearDdBtn'), list=document.getElementById('yearDdList');
+  const ck=list.querySelectorAll('input:checked').length, tot=yearOrder.length;
+  btn.innerHTML=(ck===0||ck===tot)?`全部年份 &#9662;`:`${ck}/${tot} 年 &#9662;`;
+}
+function yearSelAll(){document.getElementById('yearDdList').querySelectorAll('input[type="checkbox"]').forEach(c=>c.checked=true);updateYearBtn();applyFilters();}
+function yearSelNone(){document.getElementById('yearDdList').querySelectorAll('input[type="checkbox"]').forEach(c=>c.checked=false);updateYearBtn();applyFilters();}
+function clearYearFilter(){yearSelAll();}
 
 function updateSourceFilter(){
   const show=activeCats.has('02')||activeCats.has('03');
@@ -460,6 +490,11 @@ function applyFilters(){
   const checked=new Set([...wl.querySelectorAll('input:checked')].map(c=>c.value));
   if(checked.size===0) items=[];
   else if(checked.size<weekOrder.length) items=items.filter(c=>checked.has(c.week));
+  // Year
+  const yl2=document.getElementById('yearDdList');
+  const checkedYears=new Set([...yl2.querySelectorAll('input:checked')].map(c=>c.value));
+  if(checkedYears.size===0) items=[];
+  else if(checkedYears.size<yearOrder.length) items=items.filter(c=>{const m=c.week.match(/(\d+)年/);return m&&checkedYears.has(m[1]);});
   if(activeSource) items=items.filter(c=>c.source===activeSource);
   if(activeExt) items=items.filter(c=>c.ext===activeExt);
   if(showFavOnly) items=items.filter(c=>favoritesSet.has(c.work_path));
@@ -504,6 +539,8 @@ function renderActiveFilters(){
   if(activeCats.size<5) activeCats.forEach(c=>h+=`<span class="chip" style="background:${CAT_COLORS[c]};color:#fff">${CAT_NAMES[c]} <span class="x" onclick="toggleCat('${c}')">x</span></span>`);
   {const wl=document.getElementById('weekDdList');const ck=[...wl.querySelectorAll('input:checked')].length;
    if(ck>0&&ck<weekOrder.length) h+=`<span class="chip">周次: ${ck}/${weekOrder.length} <span class="x" onclick="clearWeekFilter()">x</span></span>`;}
+  {const yl3=document.getElementById('yearDdList');const yk=[...yl3.querySelectorAll('input:checked')].length;
+   if(yk>0&&yk<yearOrder.length) h+=`<span class="chip">年份: ${yk}/${yearOrder.length} <span class="x" onclick="clearYearFilter()">x</span></span>`;}
   if(activeSource) h+=`<span class="chip">来源: ${esc(activeSource)} <span class="x" onclick="clearSourceFilter()">x</span></span>`;
   if(activeExt) h+=`<span class="chip">类型: ${activeExt} <span class="x" onclick="clearExtFilter()">x</span></span>`;
   el.innerHTML=h; el.classList.toggle('has-chips',h.length>0);
@@ -1010,6 +1047,9 @@ document.addEventListener('DOMContentLoaded',()=>{
   // Week dropdown
   document.getElementById('weekDdBtn').addEventListener('click',()=>document.getElementById('weekDdList').classList.toggle('open'));
   document.addEventListener('click',e=>{if(!e.target.closest('.week-dd'))document.getElementById('weekDdList').classList.remove('open');});
+  // Year dropdown
+  document.getElementById('yearDdBtn').addEventListener('click',()=>document.getElementById('yearDdList').classList.toggle('open'));
+  document.addEventListener('click',e=>{if(!e.target.closest('#yearDd'))document.getElementById('yearDdList').classList.remove('open');});
 
   // Source & Ext
   document.getElementById('sourceSel').addEventListener('change',e=>{activeSource=e.target.value;applyFilters();});
