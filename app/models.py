@@ -25,6 +25,10 @@ class BatchExtractRequest(BaseModel):
     target_dir: str
 
 
+class BatchDeleteRequest(BaseModel):
+    items: list[BatchExtractItem]
+
+
 class FavoriteItem(BaseModel):
     filename: str
     work_path: str

@@ -31,7 +31,10 @@ def _validate_path(filepath: str, root: str) -> str:
     """Validate that a path is within a root directory (prevent traversal)."""
     real_root = os.path.realpath(root)
     real_path = os.path.realpath(filepath)
-    if not real_path.startswith(real_root + os.sep) and real_path != real_root:
+    # normcase handles Windows case-insensitive path comparison
+    root_cmp = os.path.normcase(real_root)
+    path_cmp = os.path.normcase(real_path)
+    if not path_cmp.startswith(root_cmp + os.sep) and path_cmp != root_cmp:
         raise PermissionError(f"Access denied: path outside allowed directory")
     return real_path
 

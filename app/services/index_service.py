@@ -64,21 +64,19 @@ def init_db():
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_history_opened ON history(opened_at DESC)")
 
-        # Check if FTS needs migration (old standalone → new content=catalog)
+        # Check if FTS needs migration (external content → standalone with work_path join)
         cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='fts_index'")
         row = cur.fetchone()
-        if row and 'content=' not in (row[0] or ''):
+        if row and 'content=' in (row[0] or ''):
             conn.execute("DROP TABLE IF EXISTS fts_index")
 
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS fts_index USING fts5(
-                work_path,
+                work_path UNINDEXED,
                 filename,
                 category,
                 source,
                 week,
-                content=catalog,
-                content_rowid=rowid,
                 tokenize='unicode61'
             )
         """)
@@ -182,29 +180,42 @@ def incremental_index(new_items: list[dict]):
 
 
 def search(query: str, limit: int = 50) -> list[dict]:
-    """Full-text search. Returns full catalog items via content= join."""
+    """Full-text search with LIKE fallback for Chinese / non-tokenized queries."""
     q = query.strip()
     if not q:
         return []
 
     conn = _get_conn()
     try:
+        rows = []
+        # Try FTS5 first (works well for ASCII / space-delimited tokens)
         try:
             rows = conn.execute(
-                "SELECT * FROM catalog WHERE rowid IN (SELECT rowid FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT ?)",
+                "SELECT c.* FROM fts_index f JOIN catalog c ON c.work_path = f.work_path "
+                "WHERE fts_index MATCH ? ORDER BY rank LIMIT ?",
                 (q, limit),
             ).fetchall()
         except sqlite3.OperationalError:
+            # Fallback: wrap each word in quotes for FTS phrase matching
             simple_q = " OR ".join(f'"{w}"' for w in q.split() if len(w) > 1)
-            if not simple_q:
-                return []
-            try:
-                rows = conn.execute(
-                    "SELECT * FROM catalog WHERE rowid IN (SELECT rowid FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT ?)",
-                    (simple_q, limit),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                return []
+            if simple_q:
+                try:
+                    rows = conn.execute(
+                        "SELECT c.* FROM fts_index f JOIN catalog c ON c.work_path = f.work_path "
+                        "WHERE fts_index MATCH ? ORDER BY rank LIMIT ?",
+                        (simple_q, limit),
+                    ).fetchall()
+                except sqlite3.OperationalError:
+                    pass
+
+        # LIKE fallback for Chinese / queries that FTS can't tokenize
+        if not rows:
+            like_q = f"%{q}%"
+            rows = conn.execute(
+                "SELECT * FROM catalog WHERE filename LIKE ? OR source LIKE ? "
+                "ORDER BY week DESC, filename LIMIT ?",
+                (like_q, like_q, limit),
+            ).fetchall()
 
         return [dict(r) for r in rows]
     finally:

@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 
 from app.config import APP_TOKEN, BASE_DIR, ARCHIVES_DIR, HTML_PATH, MAX_UPLOAD_SIZE, WORK_DIR, open_file_external
 from app.models import (
+    BatchDeleteRequest,
     BatchExtractRequest,
     ExtractRequest,
     FavoriteItem,
@@ -130,7 +131,13 @@ async def serve_file(work_path: str = Query(...)):
     try:
         path = zip_service.serve_file(work_path)
         media_type, _ = mimetypes.guess_type(path)
-        return FileResponse(path, media_type=media_type or "application/octet-stream")
+        return FileResponse(
+            path,
+            media_type=media_type or "application/octet-stream",
+            filename=os.path.basename(path),
+            content_disposition_type="inline",
+            headers={"X-Content-Type-Options": "nosniff"},
+        )
     except PermissionError:
         raise HTTPException(403, "Access denied")
     except FileNotFoundError:
@@ -147,7 +154,12 @@ async def download_file(work_path: str = Query(...)):
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
     filename = os.path.basename(path)
-    return FileResponse(path, filename=filename, media_type="application/octet-stream")
+    return FileResponse(
+        path,
+        filename=filename,
+        media_type="application/octet-stream",
+        content_disposition_type="attachment",
+    )
 
 
 @router.get("/preview")
@@ -211,7 +223,7 @@ async def batch_progress(task_id: str = Query(...)):
 
 
 @router.post("/batch-delete")
-async def batch_delete(req: BatchExtractRequest, _token: str = Depends(verify_token)):
+async def batch_delete(req: BatchDeleteRequest, _token: str = Depends(verify_token)):
     """Move multiple files to recycle bin and remove from catalog, FTS, favorites, and history."""
     if not req.items:
         raise HTTPException(400, "No items specified")
@@ -230,7 +242,7 @@ async def batch_delete(req: BatchExtractRequest, _token: str = Depends(verify_to
             errors.append(f"{wp}: Access denied")
         except FileNotFoundError:
             errors.append(f"{wp}: File not found")
-    return {"status": "ok", "recycled": len(recycled), "errors": errors}
+    return {"status": "ok", "recycled": recycled, "count": len(recycled), "errors": errors}
 
 
 # ============ Full-Text Search ============

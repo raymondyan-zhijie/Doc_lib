@@ -8,17 +8,9 @@ import { applyFilters } from './filters.js';
 import { closeUploadDialog } from './upload.js';
 
 // ======== PREVIEW ========
-const PREVIEWABLE_EXTS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp',
-  '.mp4', '.webm', '.ogg', '.mp3', '.wav', '.flac',
-  '.txt', '.csv', '.md', '.py', '.js', '.html', '.css', '.json', '.xml', '.log']);
-
 export function previewFile(el) {
   const c = resolveItem(el); if (!c) return;
-  if (PREVIEWABLE_EXTS.has(c.ext.toLowerCase())) {
-    window.open('/api/preview?work_path=' + encodeURIComponent(c.work_path), '_blank');
-  } else {
-    window.location.href = '/api/download?work_path=' + encodeURIComponent(c.work_path);
-  }
+  window.open('/api/preview?work_path=' + encodeURIComponent(c.work_path), '_blank', 'noopener');
 }
 
 // ======== EXTRACT ========
