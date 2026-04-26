@@ -135,6 +135,7 @@ input[type="checkbox"] { width:14px; height:14px; cursor:pointer; accent-color:v
 .btn-primary:disabled { opacity:.5; cursor:not-allowed; }
 .btn-secondary { background:var(--badge-bg); color:var(--text); }
 .btn-clear { background:transparent; color:var(--text2); font-size:11px; }
+.btn-danger { background:#e74c3c; color:#fff; }
 
 /* ======== Panels ======== */
 .overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.35); z-index:100; display:none; }
@@ -578,6 +579,29 @@ async function extractFile(el){
   try{const r=await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json','X-DocLib-Token':token},body:JSON.stringify({work_path:c.work_path,target_dir:td})});const d=await r.json();if(d.error)showToast(d.error,true);else{showToast('已提取: '+d.filename);}}catch(e){showToast(e.message,true);}
 }
 
+function confirmDelete(el){
+  const c=resolveItem(el); if(!c)return;
+  if(confirm('确定删除此文件？\\n\\n'+c.filename+'\\n\\n此操作不可撤销。文件将从磁盘、目录和索引中永久删除。')){
+    deleteFile(c);
+  }
+}
+async function deleteFile(c){
+  showToast('删除: '+c.filename);
+  try{
+    const r=await fetch('/api/delete',{method:'POST',headers:{'Content-Type':'application/json','X-DocLib-Token':token},body:JSON.stringify({work_path:c.work_path})});
+    if(!r.ok){const d=await r.json();showToast(d.detail||'删除失败',true);return;}
+    // Remove from state
+    itemByPath.delete(c.work_path);
+    selectedIds.delete(c.work_path);
+    favoritesSet.delete(c.work_path);
+    allItems=allItems.filter(it=>it.work_path!==c.work_path);
+    // Close detail if open
+    if(activeDetailPath===c.work_path) closeDetail();
+    applyFilters();
+    showToast('已删除: '+c.filename);
+  }catch(e){showToast(e.message,true);}
+}
+
 async function toggleFav(wp){
   const c=itemByPath.get(wp); if(!c)return;
   if(favoritesSet.has(wp)){
@@ -623,6 +647,7 @@ function showDetail(wp){
     <button class="btn btn-secondary" data-wp="${esc(wp)}" onclick="extractFile(this)">提取</button>
     <button class="btn btn-secondary" data-wp="${esc(wp)}" onclick="previewPDF(this)">PDF预览</button>
     <button class="btn btn-secondary" onclick="toggleFav('${esc(wp)}');showDetail('${esc(wp)}')">${fav?'取消收藏':'收藏'}</button>
+    <button class="btn btn-danger" data-wp="${esc(wp)}" onclick="confirmDelete(this)">删除</button>
   </div>`;
   document.getElementById('detailContent').innerHTML=h;
   document.getElementById('detailPanel').classList.add('visible');

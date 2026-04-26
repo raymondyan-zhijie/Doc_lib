@@ -141,12 +141,14 @@ Doc_Lib/
 |------|------|------|
 | `GET /api/catalog` | GET | 目录数据（JSON，no-cache） |
 | `POST /api/catalog/update?week_label=` | POST | 扫描 work/{week}/ 更新目录并重建索引 |
+| `POST /api/catalog/rebuild` | POST | 全量重建 catalog.json + FTS 索引（扫描所有 work/ 周目录） |
 | `POST /api/open` | POST | 用系统默认程序打开文件（body: `{work_path}`） |
 | `POST /api/extract` | POST | 复制文件到指定目录（body: `{work_path, target_dir}`，target_dir 限制在 BASE_DIR 内） |
 | `GET /api/file?work_path=` | GET | 直接提供文件（浏览器预览） |
 | `POST /api/batch-extract` | POST | 批量复制文件到指定目录，返回 task_id 轮询进度 |
 | `GET /api/batch-progress?task_id=` | GET | 批量进度查询 |
 | `POST /api/open-dir` | POST | 在文件管理器中打开目录（body: `{path}`，限制在 BASE_DIR 内） |
+| `POST /api/delete` | POST | 删除文件：从磁盘、目录、FTS、收藏、历史中彻底移除（body: `{work_path}`） |
 | `GET /api/config` | GET | 服务端配置（extract_dir, platform, CSRF token） |
 | `GET /api/search?q=&limit=` | GET | 目录搜索（FTS5 work_path 稳定键，O(1) 字典查找） |
 | `POST /api/rebuild-index` | POST | 重建 FTS5 索引（事务包裹，无空窗期） |
@@ -179,4 +181,5 @@ Doc_Lib/
 - `work/` 约 50-60 GB，确保磁盘空间充足
 - 首次使用或删除 `doclib.db` 后，启动时自动重建 FTS5 索引（约 1-2 分钟）
 - 上传 ZIP 时，文件名需符合 `YYYY年M月第W周.zip` 格式以自动识别周次标签
+- 若页面列表为空（`catalog.json` 被误删），手动重建目录：`curl -X POST http://localhost:8765/api/catalog/rebuild -H \"Content-Type: application/json\"`
 - Windows 上路径大小写不敏感，`resolve_work_path()` 内部统一处理分隔符

@@ -67,6 +67,14 @@ async def update_catalog(week_label: str = Query(..., description="e.g. 2026年4
     return {"status": "ok", "new_entries": count}
 
 
+@router.post("/catalog/rebuild")
+async def rebuild_catalog(_token: str = Depends(verify_token)):
+    """Scan all work/ week directories and rebuild catalog.json + FTS index from scratch."""
+    count = catalog_service.rebuild_all()
+    index_service.build_full_index()
+    return {"status": "ok", "entries": count}
+
+
 # ============ Open & Extract ============
 
 @router.post("/open")
@@ -129,6 +137,24 @@ async def serve_file(work_path: str = Query(...)):
         raise HTTPException(403, "Access denied")
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
+
+
+@router.post("/delete")
+async def delete_file(req: OpenRequest, _token: str = Depends(verify_token)):
+    """Delete a file from work/, catalog, FTS index, favorites, and history."""
+    try:
+        path = zip_service.resolve_work_path(req.work_path)
+        if not os.path.isfile(path):
+            raise HTTPException(404, f"File not found: {req.work_path}")
+        os.remove(path)
+        catalog_service.remove_from_catalog(req.work_path)
+        index_service.remove_from_index(req.work_path)
+        index_service.remove_favorite(req.work_path)
+        index_service.remove_history_by_wp(req.work_path)
+        index_service.invalidate_cache()
+        return {"status": "deleted", "work_path": req.work_path, "filename": os.path.basename(path)}
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
 
 
 # ============ Batch ============

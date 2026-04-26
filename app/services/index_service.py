@@ -192,6 +192,16 @@ def search(query: str, limit: int = 50) -> list[dict]:
     return results
 
 
+def remove_from_index(work_path: str):
+    """Remove a single entry from the FTS5 index by work_path."""
+    conn = _get_conn()
+    try:
+        conn.execute("DELETE FROM fts_index WHERE work_path = ?", (work_path,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ============ Favorites ============
 
 def add_favorite(filename: str, work_path: str):
@@ -229,6 +239,16 @@ def is_favorite(work_path: str) -> bool:
     try:
         row = conn.execute("SELECT 1 FROM favorites WHERE work_path = ? LIMIT 1", (work_path,)).fetchone()
         return row is not None
+    finally:
+        conn.close()
+
+
+def remove_history_by_wp(work_path: str):
+    """Remove all history entries for a given work_path."""
+    conn = _get_conn()
+    try:
+        conn.execute("DELETE FROM history WHERE work_path = ?", (work_path,))
+        conn.commit()
     finally:
         conn.close()
 
