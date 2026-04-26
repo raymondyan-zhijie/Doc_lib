@@ -11,6 +11,7 @@ import shutil
 import threading
 import time
 from typing import List
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Header, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -151,7 +152,7 @@ async def preview_file(work_path: str = Query(...)):
 
     filename = os.path.basename(path)
     ext = os.path.splitext(filename)[1].lower()
-    file_url = f"/api/file?work_path={work_path}"
+    file_url = f"/api/file?work_path={quote(work_path)}"
 
     # Determine content rendering
     embed = ""
