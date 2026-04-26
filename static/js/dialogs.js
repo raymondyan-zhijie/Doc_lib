@@ -10,6 +10,12 @@ import { closeUploadDialog } from './upload.js';
 // ======== PREVIEW ========
 export function previewFile(el) {
   const c = resolveItem(el); if (!c) return;
+  const ext = (c.ext || '').toLowerCase();
+  // PDF opens directly via browser native viewer — more reliable than iframe embedding
+  if (ext === '.pdf') {
+    window.open('/api/file?work_path=' + encodeURIComponent(c.work_path), '_blank', 'noopener');
+    return;
+  }
   window.open('/api/preview?work_path=' + encodeURIComponent(c.work_path), '_blank', 'noopener');
 }
 

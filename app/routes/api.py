@@ -126,15 +126,26 @@ async def open_dir(req: OpenDirRequest, _token: str = Depends(verify_token)):
         raise HTTPException(500, "Failed to open directory")
 
 
+MIME_MAP = {
+    ".pdf": "application/pdf",
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+    ".mp4": "video/mp4", ".webm": "video/webm", ".ogg": "audio/ogg",
+    ".mp3": "audio/mpeg", ".wav": "audio/wav", ".flac": "audio/flac",
+    ".txt": "text/plain", ".csv": "text/csv", ".md": "text/markdown",
+    ".json": "application/json", ".xml": "application/xml",
+    ".html": "text/html", ".css": "text/css", ".js": "text/javascript",
+}
+
 @router.get("/file")
 async def serve_file(work_path: str = Query(...)):
     try:
         path = zip_service.serve_file(work_path)
-        media_type, _ = mimetypes.guess_type(path)
+        ext = os.path.splitext(path)[1].lower()
+        media_type = MIME_MAP.get(ext) or mimetypes.guess_type(path)[0]
         return FileResponse(
             path,
             media_type=media_type or "application/octet-stream",
-            filename=os.path.basename(path),
             content_disposition_type="inline",
             headers={"X-Content-Type-Options": "nosniff"},
         )

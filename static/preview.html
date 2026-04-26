@@ -107,12 +107,7 @@
   var TEXT = ['txt','csv','md','json','xml','log','py','css','js'];
 
   if (ext === 'pdf') {
-    bodyEl.innerHTML = '<object data="' + fileUrl + '" type="application/pdf" style="width:100%;height:calc(100vh - 36px);border:none">' +
-      '<div class="fallback-box"><div style="font-size:64px">&#128196;</div>' +
-      '<div style="font-size:16px;font-weight:500">' + filename + '</div>' +
-      '<div style="color:var(--text2)">浏览器无法直接预览此 PDF</div>' +
-      '<div class="actions"><a href="' + downloadUrl + '" class="btn btn-primary">下载文件</a>' +
-      '<button class="btn btn-secondary" id="sysOpenBtn">用系统默认软件打开</button></div></div></object>';
+    bodyEl.innerHTML = '<iframe src="' + fileUrl + '" style="width:100%;height:calc(100vh - 36px);border:none;display:block"></iframe>';
   } else if (IMG.indexOf(ext) >= 0) {
     bodyEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%"><img src="' + fileUrl + '" style="max-width:100%;max-height:100vh;object-fit:contain" alt=""></div>';
   } else if (VID.indexOf(ext) >= 0) {
