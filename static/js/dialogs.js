@@ -167,7 +167,9 @@ export function showBatchDialog() {
   document.getElementById('batchTargetDir').value = dir;
   updateBatchActualDir();
   document.getElementById('batchProgress').style.display = 'none';
+  document.getElementById('batchCancelBtn').style.display = 'none';
   document.getElementById('batchStartBtn').disabled = false;
+  document.getElementById('batchStartBtn').style.display = '';
   document.getElementById('batchDialog').classList.add('visible');
 }
 
@@ -180,32 +182,80 @@ export function updateBatchActualDir() {
   document.getElementById('batchActualDir').textContent = td + sep + ts;
 }
 
-export function closeBatchDialog() { document.getElementById('batchDialog').classList.remove('visible'); }
+export function closeBatchDialog() {
+  document.getElementById('batchDialog').classList.remove('visible');
+  if (state._batchPollId) {
+    clearTimeout(state._batchPollId);
+    state._batchPollId = 0;
+  }
+}
+
+let _activeBatchTid = '';
 
 export async function startBatchExtract() {
+  if (_activeBatchTid) { showToast('已有提取任务正在运行', true); return; }
   const items = [...state.selectedIds].map(wp => state.itemByPath.get(wp)).filter(Boolean);
   const td = document.getElementById('batchTargetDir').value.trim();
   if (!td) { showToast('请输入目标目录', true); return; }
-  document.getElementById('batchStartBtn').disabled = true;
+  document.getElementById('batchStartBtn').style.display = 'none';
+  document.getElementById('batchCancelBtn').style.display = '';
   document.getElementById('batchProgress').style.display = 'block';
   try {
     const r = await fetch('/api/batch-extract', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-DocLib-Token': state.token },
       body: JSON.stringify({ items: items.map(c => ({ work_path: c.work_path })), target_dir: td })
     });
-    const d = await r.json(); if (d.error) { showToast(d.error, true); return; }
-    const tid = d.task_id;
+    const d = await r.json();
+    if (d.error || !d.task_id) { showToast(d.error || '启动失败', true); _resetBatchUI(); return; }
+    _activeBatchTid = d.task_id;
     const poll = async () => {
-      const pr = await fetch(`/api/batch-progress?task_id=${tid}`);
-      const p = await pr.json();
-      const pct = p.total > 0 ? Math.round(p.done / p.total * 100) : 0;
+      let p;
+      try {
+        const pr = await fetch(`/api/batch-progress?task_id=${_activeBatchTid}`);
+        if (!pr.ok) { state._batchPollId = setTimeout(poll, 500); return; }
+        p = await pr.json();
+      } catch (e) {
+        state._batchPollId = setTimeout(poll, 1000);
+        return;
+      }
+      const filePct = p.total > 0 ? Math.round(p.done / p.total * 100) : 0;
+      const sizePct = (p.total_bytes && p.total_bytes > 0) ? Math.round(p.copied_bytes / p.total_bytes * 100) : null;
+      const pct = sizePct !== null ? Math.round((filePct + sizePct) / 2) : filePct;
       document.getElementById('batchProgressFill').style.width = pct + '%';
-      document.getElementById('batchProgressText').textContent = `${p.done}/${p.total} (${pct}%)` + (p.errors?.length ? ` | ${p.errors.length} 错误` : '');
-      if (p.status === 'done') { showToast(`提取完成! ${p.done} 文件 → ${p.batch_dir || td}`); closeBatchDialog(); }
-      else setTimeout(poll, 500);
+      let text = `${p.done}/${p.total} (${pct}%)`;
+      if (sizePct !== null) text += ` | ${fmtSize(p.copied_bytes || 0)} / ${fmtSize(p.total_bytes || 0)}`;
+      if (p.errors?.length) text += ` | ${p.errors.length} 错误`;
+      document.getElementById('batchProgressText').textContent = text;
+      if (p.status === 'done') {
+        showToast(`提取完成! ${p.done} 文件 → ${p.batch_dir || td}`);
+        _resetBatchUI();
+        closeBatchDialog();
+      } else if (p.status === 'cancelled') {
+        showToast('提取已取消');
+        _resetBatchUI();
+        closeBatchDialog();
+      } else {
+        state._batchPollId = setTimeout(poll, 500);
+      }
     };
-    setTimeout(poll, 500);
-  } catch (e) { showToast(e.message, true); document.getElementById('batchStartBtn').disabled = false; }
+    state._batchPollId = setTimeout(poll, 500);
+  } catch (e) { showToast(e.message, true); _resetBatchUI(); }
+}
+
+function _resetBatchUI() {
+  _activeBatchTid = '';
+  if (state._batchPollId) { clearTimeout(state._batchPollId); state._batchPollId = 0; }
+  document.getElementById('batchStartBtn').style.display = '';
+  document.getElementById('batchCancelBtn').style.display = 'none';
+}
+
+export async function cancelBatchExtract() {
+  if (!_activeBatchTid) return;
+  try {
+    await fetch(`/api/batch-cancel?task_id=${encodeURIComponent(_activeBatchTid)}`, {
+      method: 'POST', headers: { 'X-DocLib-Token': state.token }
+    });
+  } catch (e) { /* cancel best-effort */ }
 }
 
 // ======== HISTORY ========

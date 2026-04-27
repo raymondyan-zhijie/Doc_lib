@@ -233,6 +233,14 @@ async def batch_progress(task_id: str = Query(...)):
     return progress
 
 
+@router.post("/batch-cancel")
+async def batch_cancel(task_id: str = Query(...), _token: str = Depends(verify_token)):
+    ok = zip_service.cancel_batch(task_id)
+    if not ok:
+        raise HTTPException(404, "Task not found or already finished")
+    return {"status": "cancelled", "task_id": task_id}
+
+
 @router.post("/batch-delete")
 async def batch_delete(req: BatchDeleteRequest, _token: str = Depends(verify_token)):
     """Move multiple files to recycle bin and remove from catalog, FTS, favorites, and history."""

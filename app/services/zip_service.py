@@ -14,7 +14,9 @@ from app.config import BASE_DIR, WORK_DIR, TMP_DIR, ARCHIVES_DIR, get_7z, open_f
 
 _batch_tasks: dict = {}
 _batch_lock = threading.Lock()
+_cancel_tasks: set = set()
 _MAX_BATCH_TASKS = 100
+_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB — visible progress for large files
 
 
 def ensure_tmp():
@@ -134,13 +136,38 @@ def start_batch_extract(items: list[dict], target_dir: str) -> str:
 
 def get_batch_progress(task_id: str) -> dict | None:
     with _batch_lock:
-        return _batch_tasks.get(task_id)
+        task = _batch_tasks.get(task_id)
+        if task is None:
+            return None
+        # Return a shallow copy so callers can't mutate internal state
+        return dict(task)
 
 
 def _run_batch(items: list[dict], target_dir: str, task_id: str):
     done = 0
     errors = []
+    with _batch_lock:
+        _batch_tasks[task_id]["total_bytes"] = 0
+        _batch_tasks[task_id]["copied_bytes"] = 0
+        # Compute total size for large-file progress
+        total = 0
+        for item in items:
+            try:
+                wp = item.get("work_path", "")
+                src = resolve_work_path(wp)
+                if os.path.isfile(src):
+                    total += os.path.getsize(src)
+            except Exception:
+                pass
+        _batch_tasks[task_id]["total_bytes"] = total
+
     for item in items:
+        if task_id in _cancel_tasks:
+            with _batch_lock:
+                _batch_tasks[task_id]["status"] = "cancelled"
+                _batch_tasks[task_id]["errors"] = errors
+            _cancel_tasks.discard(task_id)
+            return
         try:
             wp = item.get("work_path", "")
             src = resolve_work_path(wp)
@@ -148,12 +175,11 @@ def _run_batch(items: list[dict], target_dir: str, task_id: str):
                 base = os.path.basename(src)
                 name, ext = os.path.splitext(base)
                 dst = os.path.join(target_dir, base)
-                # Avoid overwriting: append _1, _2, etc.
                 counter = 1
                 while os.path.exists(dst):
                     dst = os.path.join(target_dir, f"{name}_{counter}{ext}")
                     counter += 1
-                shutil.copy2(src, dst)
+                _copyfile_chunked(src, dst, task_id)
             else:
                 errors.append(f"{wp}: File not found")
         except Exception as e:
@@ -164,13 +190,39 @@ def _run_batch(items: list[dict], target_dir: str, task_id: str):
     with _batch_lock:
         _batch_tasks[task_id]["status"] = "done"
         _batch_tasks[task_id]["errors"] = errors
+        _cancel_tasks.discard(task_id)
         # Cleanup: remove oldest completed tasks beyond limit
         if len(_batch_tasks) > _MAX_BATCH_TASKS:
-            done_keys = [k for k, v in _batch_tasks.items() if v["status"] == "done"]
-            excess = len(done_keys) - _MAX_BATCH_TASKS // 2
+            done_keys = [k for k, v in _batch_tasks.items() if v["status"] in ("done", "cancelled")]
+            excess = len(_batch_tasks) - _MAX_BATCH_TASKS // 2
             if excess > 0:
                 for k in done_keys[:excess]:
                     del _batch_tasks[k]
+
+
+def _copyfile_chunked(src: str, dst: str, task_id: str):
+    """Copy a file in chunks, updating batch progress so large files don't appear frozen."""
+    with open(src, "rb") as fsrc, open(dst, "xb") as fdst:
+        while True:
+            chunk = fsrc.read(_CHUNK_SIZE)
+            if not chunk:
+                break
+            fdst.write(chunk)
+            with _batch_lock:
+                task = _batch_tasks.get(task_id)
+                if task:
+                    task["copied_bytes"] = task.get("copied_bytes", 0) + len(chunk)
+    shutil.copymode(src, dst)
+
+
+def cancel_batch(task_id: str) -> bool:
+    """Signal a running batch task to cancel at the next file boundary."""
+    with _batch_lock:
+        task = _batch_tasks.get(task_id)
+        if task and task["status"] == "running":
+            _cancel_tasks.add(task_id)
+            return True
+    return False
 
 
 # ============ Upload / Extract new archive ============

@@ -48,6 +48,7 @@ export const state = {
   // Sidebar filter state
   sidebarYearChecked: new Set(),
   sidebarMonthChecked: new Set(),
+  sidebarWeekChecked: new Set(),
   sidebarCatChecked: new Set(['01', '02', '03', '04', '05']),
 
   // Internal flags

@@ -5,16 +5,17 @@
 import { state } from './state.js';
 import { esc, fmtSize, showToast, resolveItem, toggleDarkMode, initExtractDir, getExtractDir, saveExtractDir } from './utils.js';
 import { buildSidebar, buildYearNav, buildMonthNav, buildCatNav, buildExtNav,
-         toggleYearNav, toggleMonthNav, toggleCatNav,
+         toggleYearNav, toggleMonthNav, toggleWeekNav, toggleCatNav,
          rebuildSidebarCascade, monthSelAll, monthSelNone,
+         weekSelAll, weekSelNone, clearWeekFilter,
          clearMonthFilter, clearYearFilter, clearSearch, clearSourceFilter,
          clearExtFilter, clearCatChip, applyFilters, applySort,
          yearSelectAll, yearSelectFirst,
-         updateSourceNav } from './filters.js';
+         updateSourceNav, buildWeekNav } from './filters.js';
 import { renderTable, onScroll, initColumnResize, toggleSel, updateSelection, updateStatusBar } from './table.js';
 import { previewFile, extractFile, confirmDelete, showDeleteDialog, closeDeleteDialog,
          confirmDeleteAction, batchRecycle, showDetail, closeDetail, openFile,
-         showBatchDialog, setBatchDir, closeBatchDialog, startBatchExtract,
+         showBatchDialog, setBatchDir, closeBatchDialog, startBatchExtract, cancelBatchExtract,
          showHistory, closeHistory, showStats, closeStats,
          toggleExtractDir, openExtractDir, closeAllPanels } from './dialogs.js';
 import { showUploadDialog, closeUploadDialog, handleFileDrop, handleFileSelect,
@@ -25,8 +26,9 @@ window.DL = {
   // utils
   esc, fmtSize, showToast, resolveItem, toggleDarkMode, getExtractDir, saveExtractDir,
   // filters
-  buildSidebar, toggleYearNav, toggleMonthNav, toggleCatNav,
+  buildSidebar, toggleYearNav, toggleMonthNav, toggleWeekNav, toggleCatNav,
   rebuildSidebarCascade, monthSelAll, monthSelNone,
+  weekSelAll, weekSelNone, clearWeekFilter,
   clearMonthFilter, clearYearFilter, clearSearch, clearSourceFilter,
   clearExtFilter, clearCatChip, applyFilters,
   yearSelectAll, yearSelectFirst,
@@ -35,7 +37,7 @@ window.DL = {
   // dialogs
   previewFile, extractFile, confirmDelete, showDeleteDialog, closeDeleteDialog,
   confirmDeleteAction, batchRecycle, showDetail, closeDetail, openFile,
-  showBatchDialog, setBatchDir, closeBatchDialog, startBatchExtract,
+  showBatchDialog, setBatchDir, closeBatchDialog, startBatchExtract, cancelBatchExtract,
   showHistory, closeHistory, showStats, closeStats,
   toggleExtractDir, openExtractDir, closeAllPanels,
   // upload
@@ -101,7 +103,7 @@ export async function init() {
     state.weekOrder.forEach(w => { const m = w.match(/(\d+)年(\d+)月/); if (m) mons.add(m[2] + '月'); });
     state.yearOrder = [...yrs].sort();
     state.monthOrder = [...mons].sort((a, b) => parseInt(a) - parseInt(b));
-    state.sidebarYearChecked = new Set(state.yearOrder);
+    state.sidebarYearChecked = new Set(); // empty = all years selected
     state.sidebarCatChecked = new Set(['01', '02', '03', '04', '05']);
     buildSidebar(); applyFilters();
     document.getElementById('loading').style.display = 'none';
@@ -160,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('batchBtn').addEventListener('click', showBatchDialog);
   document.getElementById('batchDelBtn').addEventListener('click', batchRecycle);
   document.getElementById('batchStartBtn').addEventListener('click', startBatchExtract);
-  document.getElementById('batchCancelBtn').addEventListener('click', closeBatchDialog);
+  document.getElementById('batchCancelBtn').addEventListener('click', cancelBatchExtract);
 
   document.getElementById('detailClose').addEventListener('click', closeDetail);
   document.getElementById('detailOverlay').addEventListener('click', closeDetail);
